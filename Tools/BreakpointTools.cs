@@ -101,8 +101,11 @@ public class BreakpointTools
 
         foreach (Breakpoint2 bp in bps)
         {
-            bp.Message = message;
-            bp.BreakWhenHit = false;
+            // Message and BreakWhenHit setters may not be exposed in the interop type,
+            // use dynamic to access the COM setter directly.
+            dynamic dbp = bp;
+            dbp.Message = message;
+            dbp.BreakWhenHit = false;
         }
 
         return $"Tracepoint added at {filePath}:{lineNumber} with message: \"{message}\"";
@@ -115,29 +118,23 @@ public class BreakpointTools
 
         var bps = dte.Debugger.Breakpoints.Add(File: filePath, Line: lineNumber);
 
-        // COM expects int values, not C# enum — cast explicitly
-        int type = hitCountType.ToLowerInvariant() switch
+        var type = hitCountType.ToLowerInvariant() switch
         {
-            "equal" => (int)dbgHitCountType.dbgHitCountTypeEqual,
-            "greaterthanorequal" or "gte" => (int)dbgHitCountType.dbgHitCountTypeGreaterOrEqual,
-            "multiple" => (int)dbgHitCountType.dbgHitCountTypeMultiple,
-            _ => (int)dbgHitCountType.dbgHitCountTypeEqual
+            "equal" => dbgHitCountType.dbgHitCountTypeEqual,
+            "greaterthanorequal" or "gte" => dbgHitCountType.dbgHitCountTypeGreaterOrEqual,
+            "multiple" => dbgHitCountType.dbgHitCountTypeMultiple,
+            _ => dbgHitCountType.dbgHitCountTypeEqual
         };
 
-        try
+        foreach (Breakpoint2 bp in bps)
         {
-            foreach (Breakpoint2 bp in bps)
-            {
-                dynamic dbp = bp;
-                dbp.HitCountType = type;
-                dbp.HitCountTarget = hitCount;
-            }
+            // HitCountType and HitCountTarget setters are not exposed in the interop type,
+            // use dynamic to access the COM setter directly.
+            dynamic dbp = bp;
+            dbp.HitCountType = type;
+            dbp.HitCountTarget = hitCount;
+        }
 
-            return $"Hit count breakpoint added at {filePath}:{lineNumber} (breaks when hit count {hitCountType} {hitCount})";
-        }
-        catch (Exception ex)
-        {
-            return $"Breakpoint added at {filePath}:{lineNumber} but hit count configuration failed: {ex.Message}";
-        }
+        return $"Hit count breakpoint added at {filePath}:{lineNumber} (breaks when hit count {hitCountType} {hitCount})";
     }
 }

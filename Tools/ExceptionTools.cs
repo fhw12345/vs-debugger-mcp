@@ -48,10 +48,9 @@ public class ExceptionTools
     {
         var dte = DteConnector.GetDte();
 
-        // Try multiple approaches since ExceptionGroups API availability varies by VS version
         try
         {
-            // Approach 1: ExceptionGroups via dynamic (Debugger5+)
+            // Try ExceptionGroups API first (available on Debugger5+)
             dynamic debugger = dte.Debugger;
             dynamic exGroups = debugger.ExceptionGroups;
 
@@ -60,7 +59,15 @@ public class ExceptionTools
                 string groupName = group.Name;
                 if (groupName == "Common Language Runtime Exceptions")
                 {
-                    try { group.NewException(exceptionType, 0); } catch { }
+                    try
+                    {
+                        group.NewException(exceptionType, 0);
+                    }
+                    catch
+                    {
+                        // Exception type may already exist in the list
+                    }
+
                     group.SetBreakWhenThrown(true, exGroups.Item("Common Language Runtime Exceptions"));
                     return $"First-chance break enabled for CLR exceptions (including {exceptionType}).";
                 }
@@ -70,15 +77,18 @@ public class ExceptionTools
         }
         catch
         {
-            // Approach 2: Try via ExecuteCommand
+            // ExceptionGroups API not available, try ExecuteCommand fallback
             try
             {
-                dte.ExecuteCommand("Debug.Exceptions");
-                return $"Opened Exception Settings dialog. Please enable '{exceptionType}' manually in the UI.";
+                dte.ExecuteCommand("Debug.SetException",
+                    $"CLR\\{exceptionType} * * Thrown");
+                return $"First-chance break enabled for {exceptionType} (via command).";
             }
             catch
             {
-                return $"Could not configure exception breaking automatically. Please enable '{exceptionType}' via Debug > Windows > Exception Settings in Visual Studio.";
+                return $"Could not enable exception breaking for '{exceptionType}'. " +
+                       "Please enable manually: Debug > Windows > Exception Settings > " +
+                       $"search for '{exceptionType}' and check 'Thrown'.";
             }
         }
     }

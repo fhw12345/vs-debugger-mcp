@@ -17,24 +17,17 @@ public class InspectTools
 
         try
         {
-            dynamic frame = dte.Debugger.CurrentStackFrame;
+            var frame = dte.Debugger.CurrentStackFrame;
             var sb = new StringBuilder();
-
-            string header;
-            try { header = $"Locals at {frame.FunctionName} (line {frame.LineNumber}):"; }
-            catch { header = $"Locals at {frame.FunctionName}:"; }
-            sb.AppendLine(header);
+            string funcName = frame.FunctionName;
+            string lineInfo;
+            try { lineInfo = $" (line {((dynamic)frame).LineNumber})"; }
+            catch { lineInfo = ""; }
+            sb.AppendLine($"Locals at {funcName}{lineInfo}:");
 
             foreach (Expression expr in frame.Locals)
             {
-                try
-                {
-                    sb.AppendLine($"  {expr.Type} {expr.Name} = {expr.Value}");
-                }
-                catch
-                {
-                    sb.AppendLine($"  {expr.Name} = <unavailable>");
-                }
+                sb.AppendLine($"  {expr.Type} {expr.Name} = {expr.Value}");
             }
 
             return sb.ToString();
@@ -74,20 +67,19 @@ public class InspectTools
         foreach (StackFrame frame in thread.StackFrames)
         {
             var marker = i == 0 ? " -> " : "    ";
+            string funcName = frame.FunctionName;
+            string lineInfo;
             try
             {
-                dynamic df = frame;
-                string funcName = df.FunctionName;
-                string line;
-                try { line = $" (line {df.LineNumber})"; }
-                catch { line = ""; }
-                sb.AppendLine($"{marker}[{i}] {funcName}{line}");
+                int lineNum = ((dynamic)frame).LineNumber;
+                lineInfo = $" (line {lineNum})";
             }
             catch
             {
-                sb.AppendLine($"{marker}[{i}] (unknown frame)");
+                lineInfo = "";
             }
 
+            sb.AppendLine($"{marker}[{i}] {funcName}{lineInfo}");
             i++;
         }
 
