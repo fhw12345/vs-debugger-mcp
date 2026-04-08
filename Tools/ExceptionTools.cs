@@ -48,10 +48,10 @@ public class ExceptionTools
     {
         var dte = DteConnector.GetDte();
 
+        // Try multiple approaches since ExceptionGroups API availability varies by VS version
         try
         {
-            // ExceptionGroups is available on Debugger5 and later, use dynamic to avoid
-            // compile-time dependency on interfaces not present in the envdte80 interop package.
+            // Approach 1: ExceptionGroups via dynamic (Debugger5+)
             dynamic debugger = dte.Debugger;
             dynamic exGroups = debugger.ExceptionGroups;
 
@@ -60,15 +60,7 @@ public class ExceptionTools
                 string groupName = group.Name;
                 if (groupName == "Common Language Runtime Exceptions")
                 {
-                    try
-                    {
-                        group.NewException(exceptionType, 0);
-                    }
-                    catch
-                    {
-                        // Exception type may already exist in the list
-                    }
-
+                    try { group.NewException(exceptionType, 0); } catch { }
                     group.SetBreakWhenThrown(true, exGroups.Item("Common Language Runtime Exceptions"));
                     return $"First-chance break enabled for CLR exceptions (including {exceptionType}).";
                 }
@@ -76,9 +68,18 @@ public class ExceptionTools
 
             return "CLR Exception group not found in exception settings.";
         }
-        catch (Exception ex)
+        catch
         {
-            return $"Failed to configure exception breaking: {ex.Message}. Try using Visual Studio UI: Debug > Windows > Exception Settings.";
+            // Approach 2: Try via ExecuteCommand
+            try
+            {
+                dte.ExecuteCommand("Debug.Exceptions");
+                return $"Opened Exception Settings dialog. Please enable '{exceptionType}' manually in the UI.";
+            }
+            catch
+            {
+                return $"Could not configure exception breaking automatically. Please enable '{exceptionType}' via Debug > Windows > Exception Settings in Visual Studio.";
+            }
         }
     }
 

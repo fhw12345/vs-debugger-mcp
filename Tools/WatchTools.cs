@@ -54,14 +54,21 @@ public class WatchTools
 
         foreach (var expr in exprList)
         {
-            var result = dte.Debugger.GetExpression(expr, false, 5000);
-            if (result.IsValidValue)
+            try
             {
-                sb.AppendLine($"  {expr} = {result.Value} ({result.Type})");
+                var result = dte.Debugger.GetExpression(expr, false, 5000);
+                if (result.IsValidValue)
+                {
+                    sb.AppendLine($"  {expr} = {result.Value} ({result.Type})");
+                }
+                else
+                {
+                    sb.AppendLine($"  {expr} = <error: {result.Value}>");
+                }
             }
-            else
+            catch (Exception ex)
             {
-                sb.AppendLine($"  {expr} = <error: {result.Value}>");
+                sb.AppendLine($"  {expr} = <error: {ex.Message}>");
             }
         }
 

@@ -15,16 +15,34 @@ public class InspectTools
         var dte = DteConnector.GetDte();
         DteConnector.EnsureBreakMode(dte);
 
-        dynamic frame = dte.Debugger.CurrentStackFrame;
-        var sb = new StringBuilder();
-        sb.AppendLine($"Locals at {frame.FunctionName} (line {frame.LineNumber}):");
-
-        foreach (Expression expr in frame.Locals)
+        try
         {
-            sb.AppendLine($"  {expr.Type} {expr.Name} = {expr.Value}");
-        }
+            dynamic frame = dte.Debugger.CurrentStackFrame;
+            var sb = new StringBuilder();
 
-        return sb.ToString();
+            string header;
+            try { header = $"Locals at {frame.FunctionName} (line {frame.LineNumber}):"; }
+            catch { header = $"Locals at {frame.FunctionName}:"; }
+            sb.AppendLine(header);
+
+            foreach (Expression expr in frame.Locals)
+            {
+                try
+                {
+                    sb.AppendLine($"  {expr.Type} {expr.Name} = {expr.Value}");
+                }
+                catch
+                {
+                    sb.AppendLine($"  {expr.Name} = <unavailable>");
+                }
+            }
+
+            return sb.ToString();
+        }
+        catch (Exception ex)
+        {
+            return $"Failed to get locals: {ex.Message}";
+        }
     }
 
     [McpServerTool, Description("Evaluate an expression in the current debug context")]
@@ -55,15 +73,19 @@ public class InspectTools
         int i = 0;
         foreach (StackFrame frame in thread.StackFrames)
         {
-            dynamic df = frame;
             var marker = i == 0 ? " -> " : "    ";
             try
             {
-                sb.AppendLine($"{marker}[{i}] {df.FunctionName} (line {df.LineNumber})");
+                dynamic df = frame;
+                string funcName = df.FunctionName;
+                string line;
+                try { line = $" (line {df.LineNumber})"; }
+                catch { line = ""; }
+                sb.AppendLine($"{marker}[{i}] {funcName}{line}");
             }
             catch
             {
-                sb.AppendLine($"{marker}[{i}] {frame.FunctionName}");
+                sb.AppendLine($"{marker}[{i}] (unknown frame)");
             }
 
             i++;

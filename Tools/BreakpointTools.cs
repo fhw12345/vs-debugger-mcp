@@ -115,23 +115,29 @@ public class BreakpointTools
 
         var bps = dte.Debugger.Breakpoints.Add(File: filePath, Line: lineNumber);
 
-        var type = hitCountType.ToLowerInvariant() switch
+        // COM expects int values, not C# enum — cast explicitly
+        int type = hitCountType.ToLowerInvariant() switch
         {
-            "equal" => dbgHitCountType.dbgHitCountTypeEqual,
-            "greaterthanorequal" or "gte" => dbgHitCountType.dbgHitCountTypeGreaterOrEqual,
-            "multiple" => dbgHitCountType.dbgHitCountTypeMultiple,
-            _ => dbgHitCountType.dbgHitCountTypeEqual
+            "equal" => (int)dbgHitCountType.dbgHitCountTypeEqual,
+            "greaterthanorequal" or "gte" => (int)dbgHitCountType.dbgHitCountTypeGreaterOrEqual,
+            "multiple" => (int)dbgHitCountType.dbgHitCountTypeMultiple,
+            _ => (int)dbgHitCountType.dbgHitCountTypeEqual
         };
 
-        foreach (Breakpoint2 bp in bps)
+        try
         {
-            // HitCountType and HitCountTarget setters are not exposed in the interop type,
-            // use dynamic to access the COM setter directly.
-            dynamic dbp = bp;
-            dbp.HitCountType = type;
-            dbp.HitCountTarget = hitCount;
-        }
+            foreach (Breakpoint2 bp in bps)
+            {
+                dynamic dbp = bp;
+                dbp.HitCountType = type;
+                dbp.HitCountTarget = hitCount;
+            }
 
-        return $"Hit count breakpoint added at {filePath}:{lineNumber} (breaks when hit count {hitCountType} {hitCount})";
+            return $"Hit count breakpoint added at {filePath}:{lineNumber} (breaks when hit count {hitCountType} {hitCount})";
+        }
+        catch (Exception ex)
+        {
+            return $"Breakpoint added at {filePath}:{lineNumber} but hit count configuration failed: {ex.Message}";
+        }
     }
 }

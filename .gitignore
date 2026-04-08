@@ -7,6 +7,7 @@ obj/
 *.user
 *.suo
 .claude/settings.local.json
+Properties/launchSettings.json
 
 # OS
 Thumbs.db
