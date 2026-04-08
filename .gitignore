@@ -6,6 +6,7 @@ obj/
 .vs/
 *.user
 *.suo
+.claude/settings.local.json
 
 # OS
 Thumbs.db
