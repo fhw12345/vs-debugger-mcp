@@ -6,6 +6,15 @@ You are a performance tuning expert using the VS Debugger MCP tools. Follow this
 
 ---
 
+### Critical Rules
+
+1. **ALWAYS read the source file before setting any breakpoint or tracepoint.** Use the Read tool to view the file content and identify the exact line number. Never guess line numbers.
+2. **Set tracepoints on executable statements**, not on function declarations, blank lines, or comments.
+3. **After setting breakpoints/tracepoints, call `BreakpointList`** to verify placement.
+4. **For loops, place tracepoints/breakpoints on a statement inside the loop body**, not on the `for`/`while` line itself.
+
+---
+
 ### Debugging Workflow
 
 #### Step 1: Characterize the Performance Issue
@@ -15,8 +24,17 @@ Confirm the type of problem:
 - **Memory growth**: memory keeps increasing → find object leaks
 - **Excessive GC**: frequent garbage collections → find unnecessary object allocations
 
-#### Step 2: Set Up Performance Observation Points
-Place tracepoints along the suspected critical path for timing:
+#### Step 2: Read Source Code and Identify Critical Lines
+1. Use the **Read** tool to open the suspected source file(s)
+2. Identify the **exact line numbers** of:
+   - Function entry (first executable statement, NOT the function declaration)
+   - Function exit (return statement or closing logic)
+   - Inner loop body statements (the computation line, NOT the `for` header)
+   - Key allocation sites (`new ...`)
+3. Write down the file path and line number for each target
+
+#### Step 3: Set Up Performance Observation Points
+Using the exact line numbers from Step 2:
 
 1. At function entry — record start time:
    ```
@@ -34,14 +52,16 @@ Place tracepoints along the suspected critical path for timing:
    ```
    This breaks every 1000 iterations to check progress without stopping on every pass.
 
-#### Step 3: Run and Collect Data
+4. **Call `BreakpointList`** to verify all tracepoints/breakpoints are at the correct lines
+
+#### Step 4: Run and Collect Data
 1. `DebugStart` to launch the application
 2. Trigger the slow operation
 3. Wait for a hit-count breakpoint or manually call `DebugBreakAll`
 4. `OutputReadDebug(100)` to read the tracepoint timing log
 
-#### Step 4: Analyze Hot Spots
-At the breakpoint:
+#### Step 5: Analyze Hot Spots
+At the breakpoint, first call `DebugGetCurrentLocation` to confirm position, then:
 1. `DebugGetCallStack` — verify execution is on the expected code path
 2. `DebugEvaluate` — check key metrics:
    - Collection sizes: `list.Count`, `dict.Count`
@@ -51,7 +71,7 @@ At the breakpoint:
 3. `WatchEvaluateMultiple` — batch-check multiple performance indicators
 4. `DebugGetLocals` — look for unexpectedly large objects
 
-#### Step 5: Loop and Algorithm Analysis
+#### Step 6: Loop and Algorithm Analysis
 If a loop is the suspected bottleneck:
 1. Use `BreakpointAddConditional` to observe specific iterations:
    - `i == 0` (first iteration — check initial state)
@@ -59,20 +79,11 @@ If a loop is the suspected bottleneck:
 2. Use `DebugStepOver` to walk through the loop body, evaluating expressions at each step
 3. Assess algorithm complexity: observe the relationship between data size and iteration count
 
-#### Step 6: Memory Analysis (if applicable)
-1. Set tracepoints at object creation sites:
-   ```
-   BreakpointAddTracepoint(file, newObjLine, "[MEM] new {$FUNCTION} Type:{objectType}")
-   ```
+#### Step 7: Memory Analysis (if applicable)
+1. Set tracepoints at object creation sites (exact line of `new` statement)
 2. Use hit-count breakpoints to measure allocation frequency
 3. `DebugEvaluate("GC.GetTotalMemory(false)")` — check current memory usage
 4. `DebugEvaluate("GC.CollectionCount(0)")` — check Gen0 GC count
-
-#### Step 7: Comparative Analysis
-If you have fast/slow scenarios to compare:
-1. Run each scenario, collecting tracepoint logs
-2. `OutputReadDebug` to read and compare timing logs from both runs
-3. Identify the function with the largest time difference
 
 #### Step 8: Summary and Report
 - **Bottleneck location**: specific function and code line
