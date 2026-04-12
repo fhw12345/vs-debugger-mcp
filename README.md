@@ -54,6 +54,7 @@ claude mcp add --transport sse vs-debugger http://localhost:5050/sse
 | Tool | Description |
 |------|-------------|
 | `DebugStart` | Start debugging (F5) |
+| `DebugStartWithBuild` | Build first, then start debugging the current startup project |
 | `DebugStartWithoutDebugging` | Start without debugging (Ctrl+F5) |
 | `DebugStop` | Stop debugging (Shift+F5) |
 | `DebugRestart` | Restart debugging |
@@ -64,6 +65,8 @@ claude mcp add --transport sse vs-debugger http://localhost:5050/sse
 | `DebugAttachToProcessByName` | Attach to a process by name |
 
 ### Breakpoint Tools
+
+Breakpoint file paths may be absolute paths or paths relative to the open solution.
 
 | Tool | Description |
 |------|-------------|
@@ -77,6 +80,8 @@ claude mcp add --transport sse vs-debugger http://localhost:5050/sse
 | `BreakpointRemoveAll` | Remove all breakpoints |
 
 ### Step Tools
+
+Step and current-location responses include a small source preview when Visual Studio exposes file and line information.
 
 | Tool | Description |
 |------|-------------|
@@ -94,7 +99,7 @@ claude mcp add --transport sse vs-debugger http://localhost:5050/sse
 | `DebugGetLocals` | Get local variables in current stack frame |
 | `DebugEvaluate` | Evaluate an expression |
 | `DebugGetCallStack` | Get the current call stack |
-| `DebugGetCurrentLocation` | Get current file, line, function |
+| `DebugGetCurrentLocation` | Get current file, line, function, and nearby source |
 | `DebugGetThreads` | List all threads |
 | `DebugInspectVariable` | Expand a variable to see members |
 | `DebugFreezeThread` | Freeze a thread |

@@ -13,25 +13,26 @@ public class ExceptionTools
     public static string ExceptionGetCurrent()
     {
         var dte = DteConnector.GetDte();
-        DteConnector.EnsureBreakMode(dte);
+        if (!TryRequireBreakMode(dte, "Exception inspection requires break mode. Pause at an exception or breakpoint first.", out var modeMessage))
+            return modeMessage;
 
         var sb = new StringBuilder();
 
-        var result = dte.Debugger.GetExpression("$exception", false, 5000);
+        var result = DteConnector.ExecuteWithComRetry(() => dte.Debugger.GetExpression("$exception", false, 5000));
         if (result.IsValidValue)
         {
             sb.AppendLine($"Exception: {result.Value}");
             sb.AppendLine($"Type: {result.Type}");
 
-            var msg = dte.Debugger.GetExpression("$exception.Message", false, 5000);
+            var msg = DteConnector.ExecuteWithComRetry(() => dte.Debugger.GetExpression("$exception.Message", false, 5000));
             if (msg.IsValidValue)
                 sb.AppendLine($"Message: {msg.Value}");
 
-            var stack = dte.Debugger.GetExpression("$exception.StackTrace", false, 5000);
+            var stack = DteConnector.ExecuteWithComRetry(() => dte.Debugger.GetExpression("$exception.StackTrace", false, 5000));
             if (stack.IsValidValue)
                 sb.AppendLine($"StackTrace: {stack.Value}");
 
-            var inner = dte.Debugger.GetExpression("$exception.InnerException", false, 5000);
+            var inner = DteConnector.ExecuteWithComRetry(() => dte.Debugger.GetExpression("$exception.InnerException", false, 5000));
             if (inner.IsValidValue && inner.Value != "null")
                 sb.AppendLine($"InnerException: {inner.Value}");
         }
@@ -51,7 +52,7 @@ public class ExceptionTools
         try
         {
             // Try ExceptionGroups API first (available on Debugger5+)
-            dynamic debugger = dte.Debugger;
+            dynamic debugger = DteConnector.ExecuteWithComRetry(() => dte.Debugger);
             dynamic exGroups = debugger.ExceptionGroups;
 
             foreach (dynamic group in exGroups)
@@ -101,7 +102,7 @@ public class ExceptionTools
 
         try
         {
-            dynamic debugger = dte.Debugger;
+            dynamic debugger = DteConnector.ExecuteWithComRetry(() => dte.Debugger);
             dynamic exGroups = debugger.ExceptionGroups;
             int count = exGroups.Count;
 
@@ -117,5 +118,18 @@ public class ExceptionTools
         }
 
         return sb.ToString();
+    }
+
+    private static bool TryRequireBreakMode(DTE2 dte, string userMessage, out string message)
+    {
+        var currentMode = DteConnector.ExecuteWithComRetry(() => dte.Debugger.CurrentMode);
+        if (currentMode == dbgDebugMode.dbgBreakMode)
+        {
+            message = string.Empty;
+            return true;
+        }
+
+        message = $"{userMessage} Current mode: {currentMode}.";
+        return false;
     }
 }

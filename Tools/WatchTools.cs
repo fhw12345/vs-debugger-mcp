@@ -13,26 +13,43 @@ public class WatchTools
     public static string WatchEvaluate(string expression)
     {
         var dte = DteConnector.GetDte();
-        DteConnector.EnsureBreakMode(dte);
+        if (!TryRequireBreakMode(dte, "Watch evaluation requires break mode. Pause at a breakpoint first.", out var modeMessage))
+            return modeMessage;
 
-        var result = dte.Debugger.GetExpression(expression, false, 5000);
+        var result = DteConnector.ExecuteWithComRetry(() => dte.Debugger.GetExpression(expression, false, 5000));
         if (!result.IsValidValue)
             return $"Could not evaluate '{expression}': {result.Value}";
 
         var sb = new StringBuilder();
-        sb.AppendLine($"{expression} = {result.Value} (Type: {result.Type})");
+        var value = DteConnector.ExecuteWithComRetry(() => result.Value);
+        var type = DteConnector.ExecuteWithComRetry(() => result.Type);
+        sb.AppendLine($"{expression} = {value} (Type: {type})");
 
-        if (result.DataMembers.Count > 0)
+        var members = DteConnector.ExecuteWithComRetry(() =>
+        {
+            var snapshot = new List<(string Type, string Name, string Value)>();
+            foreach (Expression member in result.DataMembers)
+            {
+                snapshot.Add((
+                    DteConnector.ExecuteWithComRetry(() => member.Type),
+                    DteConnector.ExecuteWithComRetry(() => member.Name),
+                    DteConnector.ExecuteWithComRetry(() => member.Value)));
+            }
+
+            return snapshot;
+        });
+
+        if (members.Count > 0)
         {
             sb.AppendLine("Members:");
             int count = 0;
-            foreach (Expression member in result.DataMembers)
+            foreach (var member in members)
             {
                 sb.AppendLine($"  {member.Type} {member.Name} = {member.Value}");
                 count++;
                 if (count >= 50)
                 {
-                    sb.AppendLine($"  ... and {result.DataMembers.Count - 50} more members");
+                    sb.AppendLine($"  ... and {members.Count - 50} more members");
                     break;
                 }
             }
@@ -45,7 +62,8 @@ public class WatchTools
     public static string WatchEvaluateMultiple(string expressions)
     {
         var dte = DteConnector.GetDte();
-        DteConnector.EnsureBreakMode(dte);
+        if (!TryRequireBreakMode(dte, "Watch evaluation requires break mode. Pause at a breakpoint first.", out var modeMessage))
+            return modeMessage;
 
         var sb = new StringBuilder();
         var exprList = expressions.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -56,14 +74,17 @@ public class WatchTools
         {
             try
             {
-                var result = dte.Debugger.GetExpression(expr, false, 5000);
+                var result = DteConnector.ExecuteWithComRetry(() => dte.Debugger.GetExpression(expr, false, 5000));
                 if (result.IsValidValue)
                 {
-                    sb.AppendLine($"  {expr} = {result.Value} ({result.Type})");
+                    var value = DteConnector.ExecuteWithComRetry(() => result.Value);
+                    var type = DteConnector.ExecuteWithComRetry(() => result.Type);
+                    sb.AppendLine($"  {expr} = {value} ({type})");
                 }
                 else
                 {
-                    sb.AppendLine($"  {expr} = <error: {result.Value}>");
+                    var errorValue = DteConnector.ExecuteWithComRetry(() => result.Value);
+                    sb.AppendLine($"  {expr} = <error: {errorValue}>");
                 }
             }
             catch (Exception ex)
@@ -82,7 +103,7 @@ public class WatchTools
 
         try
         {
-            dte.ExecuteCommand("Debug.AddWatch", expression);
+            DteConnector.ExecuteWithComRetry(() => dte.ExecuteCommand("Debug.AddWatch", expression));
             return $"Added '{expression}' to Watch window.";
         }
         catch (Exception ex)
@@ -98,14 +119,27 @@ public class WatchTools
 
         try
         {
-            dte.ExecuteCommand("Debug.Watch1");
-            dte.ExecuteCommand("Edit.SelectAll");
-            dte.ExecuteCommand("Edit.Delete");
+            DteConnector.ExecuteWithComRetry(() => dte.ExecuteCommand("Debug.Watch1"));
+            DteConnector.ExecuteWithComRetry(() => dte.ExecuteCommand("Edit.SelectAll"));
+            DteConnector.ExecuteWithComRetry(() => dte.ExecuteCommand("Edit.Delete"));
             return "All watch expressions cleared from Watch 1.";
         }
         catch (Exception ex)
         {
             return $"Failed to clear watch expressions: {ex.Message}";
         }
+    }
+
+    private static bool TryRequireBreakMode(DTE2 dte, string userMessage, out string message)
+    {
+        var currentMode = DteConnector.ExecuteWithComRetry(() => dte.Debugger.CurrentMode);
+        if (currentMode == dbgDebugMode.dbgBreakMode)
+        {
+            message = string.Empty;
+            return true;
+        }
+
+        message = $"{userMessage} Current mode: {currentMode}.";
+        return false;
     }
 }

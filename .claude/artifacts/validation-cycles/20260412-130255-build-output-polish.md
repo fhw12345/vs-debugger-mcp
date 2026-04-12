@@ -1,0 +1,32 @@
+# Validation Cycle Record
+
+- cycle_id: 20260412-130255-build-output-polish
+- timestamp: 2026-04-12T13:02:55+08:00
+- scenario_target:
+  - feature_scope: build timeout protection, source-location fallback, and localized output-pane reading
+  - debug_target: D:\repo\vs-debugger-mcp\test\TestDebugApp\TestDebugApp.csproj
+  - scenario_steps: build latest server -> start MCP server -> add breakpoint on TestDebugApp Program.cs line 34 -> run debug_start_with_build -> verify break mode -> verify debug_get_current_location returns file/line/source preview -> verify output_read_debug reads localized Debug pane -> verify output_immediate_execute -> stop debugging -> remove breakpoints -> stop server
+- readiness:
+  - build_baseline: green
+  - sessionstart_hook: skipped
+  - sse_reachable: green
+  - mcp_discoverable: green
+  - visual_studio_ready: green
+  - debug_target_ready: green
+  - scenario_executed: green
+  - highest_confirmed_level: end-to-end debugger verified
+- result:
+  - pass: true
+  - primary_failure_class: none
+  - retry_counter: 0
+  - next_action: stop
+- score:
+  - mcp_operability: 20
+  - debugger_behavior: 45
+  - tool_quality: 20
+  - workflow_rigor: 15
+  - total: 100
+  - threshold: >95 required for autonomous stop
+- shutdown_confirmation:
+  - test_agent_shutdown: true
+  - vs_debugger_mcp_stopped: true

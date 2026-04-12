@@ -9,6 +9,15 @@ obj/
 .claude/settings.local.json
 Properties/launchSettings.json
 
+# Local runtime artifacts
+.claude/*.pid
+.claude/settings.json
+*-debug.log
+
+# Local build outputs
+.tmp-build-out/
+bin-agent/
+
 # OS
 Thumbs.db
 Desktop.ini

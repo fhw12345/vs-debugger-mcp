@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using EnvDTE;
 using EnvDTE80;
 using ModelContextProtocol.Server;
@@ -12,46 +13,58 @@ public class BuildTools
     public static string BuildSolution()
     {
         var dte = DteConnector.GetDte();
-        dte.Solution.SolutionBuild.Build(true);
-        var state = dte.Solution.SolutionBuild.BuildState;
-        var info = dte.Solution.SolutionBuild.LastBuildInfo;
-        var errors = CollectBuildErrors(dte);
-        return $"Build completed. State: {state}, Failed projects: {info}{errors}";
+        try
+        {
+            var build = ExecuteBuild(dte);
+            return $"Build of '{build.TargetName}' completed. State: {build.State}, Failed projects: {build.FailedProjects}{build.Errors}";
+        }
+        catch (Exception ex)
+        {
+            return $"Build failed: {ex.Message}";
+        }
     }
 
     [McpServerTool, Description("Rebuild the entire solution")]
     public static string RebuildSolution()
     {
         var dte = DteConnector.GetDte();
-        dte.ExecuteCommand("Build.RebuildSolution");
-        System.Threading.Thread.Sleep(1000); // Wait for rebuild to start
-        while (dte.Solution.SolutionBuild.BuildState == vsBuildState.vsBuildStateInProgress)
+        try
         {
-            System.Threading.Thread.Sleep(500);
-        }
+            DteConnector.ExecuteWithComRetry(() => dte.ExecuteCommand("Build.RebuildSolution"));
+            WaitForBuildCompletion(dte);
 
-        var info = dte.Solution.SolutionBuild.LastBuildInfo;
-        var errors = CollectBuildErrors(dte);
-        return $"Rebuild completed. Failed projects: {info}{errors}";
+            var state = DteConnector.ExecuteWithComRetry(() => dte.Solution.SolutionBuild.BuildState);
+            var info = DteConnector.ExecuteWithComRetry(() => dte.Solution.SolutionBuild.LastBuildInfo);
+            var errors = CollectBuildErrors(dte);
+            return $"Rebuild completed. State: {state}, Failed projects: {info}{errors}";
+        }
+        catch (Exception ex)
+        {
+            return $"Rebuild failed: {ex.Message}";
+        }
     }
 
     [McpServerTool, Description("Build a specific project by name. The name can be a substring match (e.g. 'MyProject' will match 'MyProject\\MyProject.csproj'). Use ListProjects to see available project names.")]
     public static string BuildProject(string projectName, string configuration = "Debug")
     {
         var dte = DteConnector.GetDte();
-        var uniqueName = ResolveProjectUniqueName(dte, projectName);
-        dte.Solution.SolutionBuild.BuildProject(configuration, uniqueName, true);
-        var info = dte.Solution.SolutionBuild.LastBuildInfo;
-        var errors = CollectBuildErrors(dte);
-        return $"Build of '{uniqueName}' completed. Failed projects: {info}{errors}";
+        try
+        {
+            var build = ExecuteBuild(dte, projectName, configuration);
+            return $"Build of '{build.TargetName}' completed. State: {build.State}, Failed projects: {build.FailedProjects}{build.Errors}";
+        }
+        catch (Exception ex)
+        {
+            return $"Build of '{projectName}' failed: {ex.Message}";
+        }
     }
 
     [McpServerTool, Description("List all projects in the current solution with their unique names")]
     public static string ListProjects()
     {
         var dte = DteConnector.GetDte();
-        var projects = dte.Solution.Projects;
-        if (projects.Count == 0)
+        var projects = DteConnector.ExecuteWithComRetry(() => dte.Solution.Projects);
+        if (DteConnector.ExecuteWithComRetry(() => projects.Count) == 0)
             return "No projects found in the solution.";
 
         var lines = new List<string>();
@@ -67,8 +80,8 @@ public class BuildTools
     public static string GetBuildStatus()
     {
         var dte = DteConnector.GetDte();
-        var state = dte.Solution.SolutionBuild.BuildState;
-        var info = dte.Solution.SolutionBuild.LastBuildInfo;
+        var state = DteConnector.ExecuteWithComRetry(() => dte.Solution.SolutionBuild.BuildState);
+        var info = DteConnector.ExecuteWithComRetry(() => dte.Solution.SolutionBuild.LastBuildInfo);
         return $"BuildState: {state}, LastBuildInfo (failed projects): {info}";
     }
 
@@ -76,8 +89,31 @@ public class BuildTools
     public static string CleanSolution()
     {
         var dte = DteConnector.GetDte();
-        dte.Solution.SolutionBuild.Clean(true);
+        DteConnector.ExecuteWithComRetry(() => dte.Solution.SolutionBuild.Clean(true));
         return "Clean completed.";
+    }
+
+    internal static BuildInvocationResult ExecuteBuild(DTE2 dte, string? projectName = null, string configuration = "Debug")
+    {
+        string targetName;
+
+        if (string.IsNullOrWhiteSpace(projectName))
+        {
+            targetName = "solution";
+            DteConnector.ExecuteWithComRetry(() => dte.Solution.SolutionBuild.Build(true));
+        }
+        else
+        {
+            targetName = ResolveProjectUniqueName(dte, projectName);
+            DteConnector.ExecuteWithComRetry(() => dte.Solution.SolutionBuild.BuildProject(configuration, targetName, true));
+        }
+
+        WaitForBuildCompletion(dte);
+
+        var state = DteConnector.ExecuteWithComRetry(() => dte.Solution.SolutionBuild.BuildState);
+        var failedProjects = DteConnector.ExecuteWithComRetry(() => dte.Solution.SolutionBuild.LastBuildInfo);
+        var errors = CollectBuildErrors(dte);
+        return new BuildInvocationResult(targetName, configuration, state, failedProjects, errors);
     }
 
     /// <summary>
@@ -183,12 +219,12 @@ public class BuildTools
         }
     }
 
-    private static string CollectBuildErrors(DTE2 dte)
+    internal static string CollectBuildErrors(DTE2 dte)
     {
         try
         {
-            var errorList = dte.ToolWindows.ErrorList;
-            var errorCount = errorList.ErrorItems.Count;
+            var errorList = DteConnector.ExecuteWithComRetry(() => dte.ToolWindows.ErrorList);
+            var errorCount = DteConnector.ExecuteWithComRetry(() => errorList.ErrorItems.Count);
             if (errorCount == 0)
                 return "";
 
@@ -196,8 +232,12 @@ public class BuildTools
             var limit = Math.Min(errorCount, 20);
             for (int i = 1; i <= limit; i++)
             {
-                var item = errorList.ErrorItems.Item(i);
-                errors.Add($"  [{item.Project}] {item.FileName}({item.Line}): {item.Description}");
+                var item = DteConnector.ExecuteWithComRetry(() => errorList.ErrorItems.Item(i));
+                var project = DteConnector.ExecuteWithComRetry(() => item.Project);
+                var fileName = DteConnector.ExecuteWithComRetry(() => item.FileName);
+                var line = DteConnector.ExecuteWithComRetry(() => item.Line);
+                var description = DteConnector.ExecuteWithComRetry(() => item.Description);
+                errors.Add($"  [{project}] {fileName}({line}): {description}");
             }
 
             var result = $"\nErrors ({errorCount} total):\n" + string.Join("\n", errors);
@@ -209,5 +249,46 @@ public class BuildTools
         {
             return "";
         }
+    }
+
+    private static void WaitForBuildCompletion(DTE2 dte)
+    {
+        var timeout = TimeSpan.FromMinutes(5);
+        var stopwatch = Stopwatch.StartNew();
+        var sawInProgress = false;
+        var stableDoneSamples = 0;
+
+        while (stopwatch.Elapsed < timeout)
+        {
+            var state = DteConnector.ExecuteWithComRetry(() => dte.Solution.SolutionBuild.BuildState);
+            if (state == vsBuildState.vsBuildStateInProgress)
+            {
+                sawInProgress = true;
+                stableDoneSamples = 0;
+            }
+            else
+            {
+                if (!sawInProgress)
+                    return;
+
+                stableDoneSamples++;
+                if (stableDoneSamples >= 2)
+                    return;
+            }
+
+            System.Threading.Thread.Sleep(250);
+        }
+
+        throw new TimeoutException($"Timed out waiting for build completion after {timeout.TotalMinutes:0} minutes.");
+    }
+
+    internal readonly record struct BuildInvocationResult(
+        string TargetName,
+        string Configuration,
+        vsBuildState State,
+        int FailedProjects,
+        string Errors)
+    {
+        public bool Succeeded => FailedProjects == 0;
     }
 }

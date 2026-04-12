@@ -13,20 +13,11 @@ public class OutputTools
     public static string OutputReadDebug(int lastNLines = 50)
     {
         var dte = DteConnector.GetDte();
+        lastNLines = NormalizeLineCount(lastNLines);
 
         try
         {
-            var outputWindow = dte.ToolWindows.OutputWindow;
-            OutputWindowPane? debugPane = null;
-
-            foreach (OutputWindowPane pane in outputWindow.OutputWindowPanes)
-            {
-                if (pane.Name == "Debug")
-                {
-                    debugPane = pane;
-                    break;
-                }
-            }
+            var debugPane = GetPaneByName(dte, "Debug");
 
             if (debugPane == null)
                 return "Debug output pane not found.";
@@ -43,14 +34,14 @@ public class OutputTools
     public static string OutputListPanes()
     {
         var dte = DteConnector.GetDte();
+        var panes = GetPaneSnapshot(dte);
         var sb = new StringBuilder();
 
-        var outputWindow = dte.ToolWindows.OutputWindow;
-        sb.AppendLine($"Output window panes ({outputWindow.OutputWindowPanes.Count}):");
+        sb.AppendLine($"Output window panes ({panes.Count}):");
 
-        foreach (OutputWindowPane pane in outputWindow.OutputWindowPanes)
+        foreach (var pane in panes)
         {
-            sb.AppendLine($"  - {pane.Name}");
+            sb.AppendLine($"  - {DteConnector.ExecuteWithComRetry(() => pane.Name)}");
         }
 
         return sb.ToString();
@@ -60,10 +51,14 @@ public class OutputTools
     public static string OutputReadPane(string paneName, int lastNLines = 50)
     {
         var dte = DteConnector.GetDte();
+        lastNLines = NormalizeLineCount(lastNLines);
 
         try
         {
-            var pane = dte.ToolWindows.OutputWindow.OutputWindowPanes.Item(paneName);
+            var pane = GetPaneByName(dte, paneName);
+            if (pane == null)
+                return $"Pane '{paneName}' not found. Use OutputListPanes to see available panes.";
+
             return ReadPane(pane, lastNLines);
         }
         catch (Exception ex)
@@ -76,17 +71,21 @@ public class OutputTools
     public static string OutputImmediateExecute(string command)
     {
         var dte = DteConnector.GetDte();
-        DteConnector.EnsureBreakMode(dte);
+        if (!TryRequireBreakMode(dte, "Immediate execution requires break mode. Pause at a breakpoint first.", out var modeMessage))
+            return modeMessage;
 
         try
         {
-            var result = dte.Debugger.GetExpression(command, false, 10000);
+            var result = DteConnector.ExecuteWithComRetry(() => dte.Debugger.GetExpression(command, false, 10000));
             if (result.IsValidValue)
             {
-                return $"> {command}\n{result.Value} (Type: {result.Type})";
+                var value = DteConnector.ExecuteWithComRetry(() => result.Value);
+                var type = DteConnector.ExecuteWithComRetry(() => result.Type);
+                return $"> {command}\n{value} (Type: {type})";
             }
 
-            return $"> {command}\nCould not evaluate: {result.Value}";
+            var errorValue = DteConnector.ExecuteWithComRetry(() => result.Value);
+            return $"> {command}\nCould not evaluate: {errorValue}";
         }
         catch (Exception ex)
         {
@@ -96,19 +95,98 @@ public class OutputTools
 
     private static string ReadPane(OutputWindowPane pane, int lastNLines)
     {
-        var textDoc = pane.TextDocument;
-        var editPoint = textDoc.StartPoint.CreateEditPoint();
-        var allText = editPoint.GetText(textDoc.EndPoint);
+        var paneName = DteConnector.ExecuteWithComRetry(() => pane.Name);
+        var textDoc = DteConnector.ExecuteWithComRetry(() => pane.TextDocument);
+        var endPoint = DteConnector.ExecuteWithComRetry(() => textDoc.EndPoint);
+        var totalLines = DteConnector.ExecuteWithComRetry(() => endPoint.Line);
 
-        if (string.IsNullOrEmpty(allText))
-            return $"Output pane '{pane.Name}' is empty.";
+        if (totalLines <= 1)
+            return $"Output pane '{paneName}' is empty.";
 
-        var lines = allText.Split('\n');
-        if (lines.Length <= lastNLines)
-            return allText;
+        var startLine = Math.Max(1, totalLines - lastNLines + 1);
+        var relevantText = DteConnector.ExecuteWithComRetry(() =>
+        {
+            var editPoint = textDoc.StartPoint.CreateEditPoint();
+            return editPoint.GetLines(startLine, totalLines + 1);
+        });
 
-        var relevantLines = lines.Skip(lines.Length - lastNLines);
-        return $"(Showing last {lastNLines} of {lines.Length} lines)\n" +
-               string.Join("\n", relevantLines);
+        if (string.IsNullOrWhiteSpace(relevantText))
+            return $"Output pane '{paneName}' is empty.";
+
+        if (startLine == 1)
+            return relevantText;
+
+        var shownLines = totalLines - startLine + 1;
+        return $"(Showing last {shownLines} of {totalLines} lines)\n{relevantText}";
+    }
+
+    private static OutputWindowPane? GetPaneByName(DTE2 dte, string paneName)
+    {
+        var aliases = GetPaneAliases(paneName);
+        return GetPaneSnapshot(dte)
+            .FirstOrDefault(pane => aliases.Contains(NormalizePaneName(DteConnector.ExecuteWithComRetry(() => pane.Name))));
+    }
+
+    private static List<OutputWindowPane> GetPaneSnapshot(DTE2 dte)
+    {
+        return DteConnector.ExecuteWithComRetry(() =>
+        {
+            var panes = new List<OutputWindowPane>();
+            var outputWindow = dte.ToolWindows.OutputWindow;
+            foreach (OutputWindowPane pane in outputWindow.OutputWindowPanes)
+            {
+                panes.Add(pane);
+            }
+
+            return panes;
+        });
+    }
+
+    private static int NormalizeLineCount(int lastNLines)
+    {
+        return Math.Clamp(lastNLines, 1, 500);
+    }
+
+    private static HashSet<string> GetPaneAliases(string paneName)
+    {
+        var normalizedName = NormalizePaneName(paneName);
+        var aliases = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            normalizedName
+        };
+
+        switch (normalizedName)
+        {
+            case "debug":
+                aliases.Add("调试");
+                break;
+            case "build":
+                aliases.Add("生成");
+                break;
+            case "build order":
+            case "buildorder":
+                aliases.Add("生成顺序");
+                break;
+        }
+
+        return aliases;
+    }
+
+    private static string NormalizePaneName(string paneName)
+    {
+        return paneName.Trim().ToLowerInvariant();
+    }
+
+    private static bool TryRequireBreakMode(DTE2 dte, string userMessage, out string message)
+    {
+        var currentMode = DteConnector.ExecuteWithComRetry(() => dte.Debugger.CurrentMode);
+        if (currentMode == dbgDebugMode.dbgBreakMode)
+        {
+            message = string.Empty;
+            return true;
+        }
+
+        message = $"{userMessage} Current mode: {currentMode}.";
+        return false;
     }
 }
