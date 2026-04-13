@@ -14,6 +14,8 @@
     <Content Remove=".mcp.json" />
     <Content Remove=".claude-plugin\**" />
     <Content Remove="hooks\**" />
+    <Content Remove="skills\**" />
+    <Content Remove="commands\**" />
     <Content Remove="dist\**" />
     <None Remove="dist\**" />
   </ItemGroup>
