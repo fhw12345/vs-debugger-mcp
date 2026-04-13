@@ -11,6 +11,11 @@
   <ItemGroup>
     <Compile Remove="test\**" />
     <Content Remove="test\**" />
+    <Content Remove=".mcp.json" />
+    <Content Remove=".claude-plugin\**" />
+    <Content Remove="hooks\**" />
+    <Content Remove="dist\**" />
+    <None Remove="dist\**" />
   </ItemGroup>
 
   <ItemGroup>

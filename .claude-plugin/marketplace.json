@@ -1,0 +1,19 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "vs-debugger-marketplace",
+  "description": "Visual Studio Debugger MCP Server for Claude Code",
+  "owner": {
+    "name": "Haowen Feng"
+  },
+  "plugins": [
+    {
+      "name": "vs-debugger-mcp",
+      "version": "1.0.0",
+      "description": "MCP server that exposes Visual Studio debugging capabilities over HTTP/SSE. Control building, debugging, breakpoints, stepping, inspection, exceptions, output, and watch expressions through Claude Code.",
+      "source": "./",
+      "category": "development",
+      "license": "MIT",
+      "keywords": ["visual-studio", "debugger", "mcp", "debugging", "dotnet", "windows"]
+    }
+  ]
+}
