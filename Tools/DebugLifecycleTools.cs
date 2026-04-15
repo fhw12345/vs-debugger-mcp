@@ -12,8 +12,11 @@ public class DebugLifecycleTools
     [McpServerTool, Description("Start debugging (F5)")]
     public static string DebugStart()
     {
+        McpLogger.Log("DebugStart", "enter");
         var dte = DteConnector.GetDte();
+        McpLogger.Log("DebugStart", "got DTE");
         var mode = GetCurrentMode(dte);
+        McpLogger.Log("DebugStart", "current mode", mode.ToString());
 
         if (mode == dbgDebugMode.dbgRunMode)
             return "Debugging is already running.";
@@ -24,8 +27,33 @@ public class DebugLifecycleTools
             return $"Continued from break mode. Mode: {GetCurrentMode(dte)}";
         }
 
-        DteConnector.ExecuteWithComRetry(() => dte.Debugger.Go(false));
-        return $"Debugging started. Mode: {GetCurrentMode(dte)}";
+        // ExecuteCommand dispatches asynchronously on VS's UI thread and returns quickly
+        McpLogger.Log("DebugStart", "calling ExecuteCommand(Debug.Start)");
+        DteConnector.ExecuteWithComRetry(() => dte.ExecuteCommand("Debug.Start"));
+        McpLogger.Log("DebugStart", "ExecuteCommand returned, polling for mode change");
+
+        // Poll until VS enters Run/Break mode or timeout
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (sw.Elapsed < TimeSpan.FromMinutes(8))
+        {
+            System.Threading.Thread.Sleep(3000);
+            try
+            {
+                var currentMode = GetCurrentMode(dte);
+                McpLogger.Log("DebugStart", "poll", $"mode={currentMode} elapsed={sw.Elapsed.TotalSeconds:0}s");
+                if (currentMode == dbgDebugMode.dbgRunMode)
+                    return $"Debugging started (after {sw.Elapsed.TotalSeconds:0}s). Mode: Run";
+                if (currentMode == dbgDebugMode.dbgBreakMode)
+                    return $"Debugging started and hit breakpoint (after {sw.Elapsed.TotalSeconds:0}s). Mode: Break";
+            }
+            catch (Exception ex)
+            {
+                McpLogger.Log("DebugStart", "poll error (VS busy)", ex.Message);
+            }
+        }
+
+        McpLogger.Log("DebugStart", "TIMEOUT after 8 minutes");
+        return "Debug start command issued but VS hasn't entered Run/Break mode within 8 minutes. Check VS manually.";
     }
 
     [McpServerTool, Description("Build the solution or a specific project, then start debugging the current startup project. If projectName is omitted, the whole solution is built first.")]
