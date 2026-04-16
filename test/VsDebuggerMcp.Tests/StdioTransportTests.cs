@@ -10,16 +10,22 @@ public class StdioTransportTests
     {
         // Walk up from test output dir to find the main project binary
         var dir = AppContext.BaseDirectory;
-        for (int i = 0; i < 8; i++)
+        for (int i = 0; i < 10; i++)
         {
-            var candidate = Path.Combine(dir, "bin", "test-build", "VsDebuggerMcp.exe");
-            if (File.Exists(candidate)) return candidate;
-            candidate = Path.Combine(dir, "bin", "Debug", "net8.0-windows", "VsDebuggerMcp.exe");
-            if (File.Exists(candidate)) return candidate;
+            foreach (var subpath in new[]
+            {
+                Path.Combine("bin", "test-build", "VsDebuggerMcp.exe"),
+                Path.Combine("bin", "Debug", "net8.0-windows", "VsDebuggerMcp.exe"),
+                Path.Combine("bin", "Release", "net8.0-windows", "VsDebuggerMcp.exe"),
+                Path.Combine("dist", "net8.0-windows", "VsDebuggerMcp.exe"),
+            })
+            {
+                var candidate = Path.Combine(dir, subpath);
+                if (File.Exists(candidate)) return candidate;
+            }
             dir = Path.GetDirectoryName(dir) ?? dir;
         }
-        // Fallback: try to find via dotnet run
-        throw new FileNotFoundException("VsDebuggerMcp.exe not found. Run 'dotnet build -o bin/test-build' first.");
+        throw new FileNotFoundException("VsDebuggerMcp.exe not found. Run 'dotnet build -o bin/test-build' or 'dotnet build' first.");
     }
 
     private static async Task<string> RunStdio(string input, int timeoutSeconds = 10)
