@@ -22,7 +22,7 @@ jobs:
         run: dotnet build --configuration Release
 
       - name: Build test binary
-        run: dotnet build -o bin/test-build
+        run: dotnet build VsDebuggerMcp.csproj -o bin/test-build
 
       - name: Unit Tests
         run: dotnet test --configuration Release --verbosity normal
@@ -31,7 +31,7 @@ jobs:
         shell: bash
         run: |
           echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"ci-smoke","version":"1.0.0"}}}' \
-            | bin/test-build/VsDebuggerMcp.exe --stdio 2>/dev/null \
+            | timeout 10 bin/test-build/VsDebuggerMcp.exe --stdio 2>/dev/null \
             | grep -q '"protocolVersion"' \
             && echo "Stdio smoke test PASSED" \
             || (echo "Stdio smoke test FAILED" && exit 1)
