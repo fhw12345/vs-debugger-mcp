@@ -51,6 +51,9 @@ fi
 echo "=== VsDebuggerMcp E2E Test ==="
 echo "Binary: $EXE"
 
+# Suppress .NET hosting log noise on stdout
+export Logging__LogLevel__Default=None
+
 # Default solution
 if [ -z "$SOLUTION" ]; then
     SOLUTION="$REPO_DIR/test/TestDebugApp/TestDebugApp.csproj"

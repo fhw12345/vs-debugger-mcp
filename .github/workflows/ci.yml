@@ -29,6 +29,8 @@ jobs:
 
       - name: Stdio smoke test (no VS required)
         shell: bash
+        env:
+          Logging__LogLevel__Default: None
         run: |
           echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"ci-smoke","version":"1.0.0"}}}' \
             | timeout 10 bin/test-build/VsDebuggerMcp.exe --stdio 2>/dev/null \
@@ -56,6 +58,8 @@ jobs:
         if: steps.find-vs.outputs.devenv != ''
         shell: bash
         continue-on-error: true
+        env:
+          Logging__LogLevel__Default: None
         run: |
           DEVENV="${{ steps.find-vs.outputs.devenv }}"
           SOLUTION="$(pwd)/test/TestDebugApp/TestDebugApp.csproj"
@@ -87,12 +91,16 @@ jobs:
         if: steps.launch-vs.outputs.vs_ready == 'true'
         shell: bash
         continue-on-error: true
+        env:
+          Logging__LogLevel__Default: None
         run: bash test/e2e-test.sh --exe bin/test-build/VsDebuggerMcp.exe
 
       - name: Cleanup Visual Studio
         if: steps.launch-vs.outputs.vs_ready == 'true'
         shell: bash
         continue-on-error: true
+        env:
+          Logging__LogLevel__Default: None
         run: |
           # Try to close VS gracefully via MCP
           (echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"cleanup","version":"1.0.0"}}}';
