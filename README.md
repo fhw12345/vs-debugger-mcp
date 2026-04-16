@@ -2,7 +2,7 @@
 
 An MCP (Model Context Protocol) server that exposes Visual Studio debugging capabilities over HTTP/SSE, enabling AI assistants like Claude to programmatically control the Visual Studio debugger.
 
-Available as a **Claude Code plugin** — install it once and the server auto-starts with every Claude Code session.
+Available as a **Claude Code plugin** — install it once and the server auto-starts with every Claude Code session. Also works with **Cursor**, **GitHub Copilot**, **Cline**, **Continue**, **Windsurf**, and any other MCP-compatible client.
 
 ## Features
 
@@ -103,10 +103,181 @@ claude plugin marketplace update      # Update all marketplaces
 ## How It Works
 
 ```
-Claude Code  →  MCP (SSE on :5050)  →  VsDebuggerMcp.exe  →  Visual Studio DTE2 COM API
+AI Agent  →  MCP (SSE or stdio)  →  VsDebuggerMcp.exe  →  Visual Studio DTE2 COM API
 ```
 
-The server discovers running Visual Studio instances via the Windows Running Object Table (ROT) and controls them through the DTE2 COM automation interface. All 8 tool groups (build, debug lifecycle, breakpoints, stepping, inspection, exceptions, output, watch) are registered as MCP tools and become available in Claude Code.
+The server supports two transport modes:
+
+- **SSE (default)** — Standalone HTTP server on port 5050. Start the server, then point your agent at `http://localhost:5050/sse`.
+- **stdio** — The agent launches the server as a child process and communicates via stdin/stdout. Use the `--stdio` flag.
+
+The server discovers running Visual Studio instances via the Windows Running Object Table (ROT) and controls them through the DTE2 COM automation interface. All 8 tool groups (build, debug lifecycle, breakpoints, stepping, inspection, exceptions, output, watch) are registered as MCP tools.
+
+## Multi-Agent Setup
+
+### Cursor
+
+Copy `editors/cursor/mcp.json` to your project's `.cursor/` directory, or add to `~/.cursor/mcp.json` globally.
+
+**stdio (recommended)** — Cursor launches the server automatically:
+```json
+{
+  "mcpServers": {
+    "vs-debugger": {
+      "command": "C:\\path\\to\\VsDebuggerMcp.exe",
+      "args": ["--stdio"]
+    }
+  }
+}
+```
+
+**SSE** — Connect to a running server:
+```json
+{
+  "mcpServers": {
+    "vs-debugger": {
+      "url": "http://localhost:5050/sse"
+    }
+  }
+}
+```
+
+### GitHub Copilot (VS Code)
+
+Add to `.vscode/mcp.json` in your workspace, or open **MCP: Open User Configuration** for global setup.
+
+> Note: Copilot uses `"servers"` as the top-level key, not `"mcpServers"`.
+
+**stdio (recommended):**
+```json
+{
+  "servers": {
+    "vs-debugger": {
+      "type": "stdio",
+      "command": "C:\\path\\to\\VsDebuggerMcp.exe",
+      "args": ["--stdio"]
+    }
+  }
+}
+```
+
+**SSE:**
+```json
+{
+  "servers": {
+    "vs-debugger": {
+      "type": "sse",
+      "url": "http://localhost:5050/sse"
+    }
+  }
+}
+```
+
+### Cline
+
+Open **Cline → MCP Servers** in the VS Code sidebar and add the server, or edit the settings file directly:
+- Windows: `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\settings\cline_mcp_settings.json`
+
+**stdio (recommended):**
+```json
+{
+  "mcpServers": {
+    "vs-debugger": {
+      "command": "C:\\path\\to\\VsDebuggerMcp.exe",
+      "args": ["--stdio"],
+      "disabled": false,
+      "autoApprove": []
+    }
+  }
+}
+```
+
+**SSE:**
+```json
+{
+  "mcpServers": {
+    "vs-debugger": {
+      "type": "sse",
+      "url": "http://localhost:5050/sse",
+      "disabled": false,
+      "autoApprove": []
+    }
+  }
+}
+```
+
+### Continue
+
+Place in `.continue/mcpServers/mcp.json` in your workspace.
+
+**stdio (recommended):**
+```json
+{
+  "mcpServers": {
+    "vs-debugger": {
+      "command": "C:\\path\\to\\VsDebuggerMcp.exe",
+      "args": ["--stdio"]
+    }
+  }
+}
+```
+
+**SSE:**
+```json
+{
+  "mcpServers": {
+    "vs-debugger": {
+      "type": "sse",
+      "url": "http://localhost:5050/sse"
+    }
+  }
+}
+```
+
+### Windsurf
+
+Add to `~/.codeium/windsurf/mcp_config.json` (global only).
+
+**stdio (recommended):**
+```json
+{
+  "mcpServers": {
+    "vs-debugger": {
+      "command": "C:\\path\\to\\VsDebuggerMcp.exe",
+      "args": ["--stdio"]
+    }
+  }
+}
+```
+
+**SSE:**
+```json
+{
+  "mcpServers": {
+    "vs-debugger": {
+      "serverUrl": "http://localhost:5050/sse"
+    }
+  }
+}
+```
+
+### Any MCP Client
+
+The server uses standard MCP protocol. For any unlisted client:
+
+- **stdio:** Run `VsDebuggerMcp.exe --stdio` as a child process
+- **SSE:** Start the server (`dotnet run` or `VsDebuggerMcp.exe`), connect to `http://localhost:5050/sse`
+
+### Quick Reference
+
+| Agent | Config File | Top-Level Key | stdio | SSE |
+|-------|------------|---------------|-------|-----|
+| Claude Code | Plugin auto-config | — | — | Auto |
+| Cursor | `.cursor/mcp.json` | `mcpServers` | Yes | Yes |
+| GitHub Copilot | `.vscode/mcp.json` | `servers` | Yes | Yes |
+| Cline | Cline MCP settings | `mcpServers` | Yes | Yes |
+| Continue | `.continue/mcpServers/*.json` | `mcpServers` | Yes | Yes |
+| Windsurf | `~/.codeium/windsurf/mcp_config.json` | `mcpServers` | Yes | Yes |
 
 ## Tool Reference
 

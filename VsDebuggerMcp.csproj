@@ -17,7 +17,9 @@
     <Content Remove="skills\**" />
     <Content Remove="commands\**" />
     <Content Remove="dist\**" />
+    <Content Remove="editors\**" />
     <None Remove="dist\**" />
+    <None Remove="editors\**" />
   </ItemGroup>
 
   <ItemGroup>

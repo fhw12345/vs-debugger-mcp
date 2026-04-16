@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "vs-debugger": {
+      "type": "stdio",
+      "command": "C:\\path\\to\\VsDebuggerMcp.exe",
+      "args": ["--stdio"]
+    }
+  }
+}

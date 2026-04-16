@@ -2,25 +2,46 @@ using ModelContextProtocol.AspNetCore;
 using ModelContextProtocol.Server;
 using VsDebuggerMcp.Tools;
 
-var builder = WebApplication.CreateBuilder(args);
-builder.WebHost.UseUrls("http://localhost:5050");
+if (args.Contains("--stdio"))
+{
+    // Stdio transport: server runs as a child process, communicates via stdin/stdout
+    var builder = Host.CreateApplicationBuilder(args);
+    builder.Services.AddMcpServer()
+        .WithStdioServerTransport()
+        .WithTools<BuildTools>()
+        .WithTools<DebugLifecycleTools>()
+        .WithTools<BreakpointTools>()
+        .WithTools<StepTools>()
+        .WithTools<InspectTools>()
+        .WithTools<ExceptionTools>()
+        .WithTools<OutputTools>()
+        .WithTools<WatchTools>();
 
-builder.Services.AddMcpServer()
-    .WithHttpTransport()
-    .WithTools<BuildTools>()
-    .WithTools<DebugLifecycleTools>()
-    .WithTools<BreakpointTools>()
-    .WithTools<StepTools>()
-    .WithTools<InspectTools>()
-    .WithTools<ExceptionTools>()
-    .WithTools<OutputTools>()
-    .WithTools<WatchTools>();
+    await builder.Build().RunAsync();
+}
+else
+{
+    // HTTP/SSE transport: standalone server on port 5050
+    var builder = WebApplication.CreateBuilder(args);
+    builder.WebHost.UseUrls("http://localhost:5050");
 
-var app = builder.Build();
-app.MapMcp();
+    builder.Services.AddMcpServer()
+        .WithHttpTransport()
+        .WithTools<BuildTools>()
+        .WithTools<DebugLifecycleTools>()
+        .WithTools<BreakpointTools>()
+        .WithTools<StepTools>()
+        .WithTools<InspectTools>()
+        .WithTools<ExceptionTools>()
+        .WithTools<OutputTools>()
+        .WithTools<WatchTools>();
 
-Console.WriteLine("VS Debugger MCP Server running on http://localhost:5050/sse");
-Console.WriteLine("Register with: claude mcp add --transport sse vs-debugger http://localhost:5050/sse");
-Console.WriteLine("Press Ctrl+C to stop.");
+    var app = builder.Build();
+    app.MapMcp();
 
-await app.RunAsync();
+    Console.WriteLine("VS Debugger MCP Server running on http://localhost:5050/sse");
+    Console.WriteLine("Register with: claude mcp add --transport sse vs-debugger http://localhost:5050/sse");
+    Console.WriteLine("Press Ctrl+C to stop.");
+
+    await app.RunAsync();
+}

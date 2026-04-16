@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "vs-debugger": {
+      "command": "C:\\path\\to\\VsDebuggerMcp.exe",
+      "args": ["--stdio"]
+    }
+  }
+}
