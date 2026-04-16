@@ -66,19 +66,66 @@ public static class DteConnector
 
     private static DTE2 ConnectToVisualStudio()
     {
+        var processIdSelector = TryGetProcessIdSelector();
+        var solutionHintSelector = TryGetSelectorValue(SolutionHintSelectorEnv);
+
         // Enumerate Running Object Table to find VS instances
         var dte = GetDteFromRunningObjectTable();
         if (dte != null)
         {
             var version = ExecuteWithComRetry(() => dte.Version);
-            McpLogger.Log("DteConnector", "connected", $"Visual Studio v{version}");
+            McpLogger.Log("DteConnector", "connected via ROT", $"Visual Studio v{version}");
             return dte;
+        }
+
+        // Only try COM activation if no specific selectors are set
+        // (selectors mean the user wants a specific instance, not a new one)
+        if (processIdSelector == null && solutionHintSelector == null)
+        {
+            dte = TryCreateDteViaComActivation();
+            if (dte != null)
+            {
+                var version = ExecuteWithComRetry(() => dte.Version);
+                McpLogger.Log("DteConnector", "connected via COM activation", $"Visual Studio v{version}");
+                return dte;
+            }
         }
 
         throw new InvalidOperationException(
             $"No running Visual Studio instance found matching selectors. " +
             $"Optional selectors: {ProcessIdSelectorEnv}=<pid>, {SolutionHintSelectorEnv}=<substring>. " +
             "Please open Visual Studio first or clear selectors.");
+    }
+
+    private static DTE2? TryCreateDteViaComActivation()
+    {
+        // Try known VS ProgIDs from newest to oldest
+        string[] progIds = ["VisualStudio.DTE.17.0", "VisualStudio.DTE.16.0"];
+
+        foreach (var progId in progIds)
+        {
+            try
+            {
+                var type = Type.GetTypeFromProgID(progId, false);
+                if (type == null) continue;
+
+                McpLogger.Log("DteConnector", "COM activation", $"trying {progId}");
+                var obj = Activator.CreateInstance(type, true);
+                if (obj is DTE2 dte)
+                {
+                    // Make VS visible and suppress UI prompts
+                    ExecuteWithComRetry(() => { dte.MainWindow.Visible = true; });
+                    ExecuteWithComRetry(() => { dte.UserControl = true; });
+                    return dte;
+                }
+            }
+            catch (Exception ex)
+            {
+                McpLogger.Log("DteConnector", "COM activation failed", $"{progId}: {ex.Message}");
+            }
+        }
+
+        return null;
     }
 
     private static DTE2? GetDteFromRunningObjectTable()

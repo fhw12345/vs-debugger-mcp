@@ -42,76 +42,42 @@ jobs:
             exit 1
           fi
 
-      - name: Find Visual Studio
-        id: find-vs
+      - name: E2E Tests (best-effort, requires VS)
         shell: bash
         continue-on-error: true
+        env:
+          Logging__LogLevel__Default: None
         run: |
+          # Check if VS is installed
           DEVENV=$("C:/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" \
             -latest -property productPath 2>/dev/null || true)
-          if [ -n "$DEVENV" ] && [ -f "$DEVENV" ]; then
-            echo "devenv=$DEVENV" >> "$GITHUB_OUTPUT"
-            echo "Found devenv: $DEVENV"
-          else
-            echo "devenv=" >> "$GITHUB_OUTPUT"
+          if [ -z "$DEVENV" ] || [ ! -f "$DEVENV" ]; then
             echo "Visual Studio not found — skipping E2E tests"
+            exit 0
           fi
+          echo "Found Visual Studio: $DEVENV"
 
-      - name: Launch Visual Studio with test project
-        id: launch-vs
-        if: steps.find-vs.outputs.devenv != ''
-        shell: bash
-        continue-on-error: true
-        env:
-          Logging__LogLevel__Default: None
-        run: |
-          DEVENV="${{ steps.find-vs.outputs.devenv }}"
-          SOLUTION="$(pwd)/test/TestDebugApp/TestDebugApp.csproj"
+          # Build TestDebugApp first
+          dotnet build test/TestDebugApp/TestDebugApp.csproj -c Debug
 
-          echo "Launching VS with: $SOLUTION"
-          "$DEVENV" /NoSplash "$SOLUTION" &
-
-          # Wait for VS to register in ROT (up to 90 seconds)
-          echo "Waiting for VS to be ready..."
-          for i in $(seq 1 30); do
-            sleep 3
-            RESULT=$(echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"ci","version":"1.0.0"}}}
-          {"jsonrpc":"2.0","method":"notifications/initialized"}
-          {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_projects","arguments":{}}}' \
-              | bin/test-build/VsDebuggerMcp.exe --stdio 2>/dev/null || true)
-
-            if echo "$RESULT" | grep -q "TestDebugApp"; then
-              echo "vs_ready=true" >> "$GITHUB_OUTPUT"
-              echo "VS is ready after $((i * 3))s"
-              exit 0
-            fi
-            echo "  Attempt $i/30 — VS not ready yet..."
-          done
-
-          echo "vs_ready=false" >> "$GITHUB_OUTPUT"
-          echo "VS did not become ready within 90s — skipping E2E"
-
-      - name: E2E Tests
-        if: steps.launch-vs.outputs.vs_ready == 'true'
-        shell: bash
-        continue-on-error: true
-        env:
-          Logging__LogLevel__Default: None
-        run: bash test/e2e-test.sh --exe bin/test-build/VsDebuggerMcp.exe
+          # Run E2E tests — DteConnector will auto-create VS via COM activation
+          # if ROT discovery fails (expected in CI)
+          bash test/e2e-test.sh --exe bin/test-build/VsDebuggerMcp.exe
 
       - name: Cleanup Visual Studio
-        if: steps.launch-vs.outputs.vs_ready == 'true'
+        if: always()
         shell: bash
         continue-on-error: true
         env:
           Logging__LogLevel__Default: None
         run: |
           # Try to close VS gracefully via MCP
-          (echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"cleanup","version":"1.0.0"}}}';
-           echo '{"jsonrpc":"2.0","method":"notifications/initialized"}';
-           sleep 1;
-           echo '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"close_solution","arguments":{"quitVS":true}}}';
-           sleep 3) | bin/test-build/VsDebuggerMcp.exe --stdio 2>/dev/null || true
+          ( echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"cleanup","version":"1.0.0"}}}';
+            echo '{"jsonrpc":"2.0","method":"notifications/initialized"}';
+            sleep 1;
+            echo '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"close_solution","arguments":{"quitVS":true}}}';
+            sleep 3
+          ) | timeout 15 bin/test-build/VsDebuggerMcp.exe --stdio 2>/dev/null || true
 
           # Force kill if still running
           taskkill //F //IM devenv.exe 2>/dev/null || true
