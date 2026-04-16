@@ -6,17 +6,7 @@ if (args.Contains("--stdio"))
 {
     // Stdio transport: server runs as a child process, communicates via stdin/stdout
     var builder = Host.CreateApplicationBuilder(args);
-    builder.Services.AddMcpServer()
-        .WithStdioServerTransport()
-        .WithTools<BuildTools>()
-        .WithTools<DebugLifecycleTools>()
-        .WithTools<BreakpointTools>()
-        .WithTools<StepTools>()
-        .WithTools<InspectTools>()
-        .WithTools<ExceptionTools>()
-        .WithTools<OutputTools>()
-        .WithTools<WatchTools>();
-
+    RegisterTools(builder.Services.AddMcpServer().WithStdioServerTransport());
     await builder.Build().RunAsync();
 }
 else
@@ -24,17 +14,7 @@ else
     // HTTP/SSE transport: standalone server on port 5050
     var builder = WebApplication.CreateBuilder(args);
     builder.WebHost.UseUrls("http://localhost:5050");
-
-    builder.Services.AddMcpServer()
-        .WithHttpTransport()
-        .WithTools<BuildTools>()
-        .WithTools<DebugLifecycleTools>()
-        .WithTools<BreakpointTools>()
-        .WithTools<StepTools>()
-        .WithTools<InspectTools>()
-        .WithTools<ExceptionTools>()
-        .WithTools<OutputTools>()
-        .WithTools<WatchTools>();
+    RegisterTools(builder.Services.AddMcpServer().WithHttpTransport());
 
     var app = builder.Build();
     app.MapMcp();
@@ -45,3 +25,13 @@ else
 
     await app.RunAsync();
 }
+
+static void RegisterTools(IMcpServerBuilder builder) => builder
+    .WithTools<BuildTools>()
+    .WithTools<DebugLifecycleTools>()
+    .WithTools<BreakpointTools>()
+    .WithTools<StepTools>()
+    .WithTools<InspectTools>()
+    .WithTools<ExceptionTools>()
+    .WithTools<OutputTools>()
+    .WithTools<WatchTools>();

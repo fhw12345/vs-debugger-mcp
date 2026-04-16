@@ -12,7 +12,9 @@ public class BreakpointTools
     [McpServerTool, Description("Add a breakpoint at a specific file and line number. filePath may be absolute or relative to the open solution.")]
     public static string BreakpointAdd(string filePath, int lineNumber)
     {
-        var dte = DteConnector.GetDte();
+        if (lineNumber <= 0)
+            return "lineNumber must be a positive integer.";
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
         if (!TryResolveSourceFile(dte, filePath, out var resolvedPath, out var errorMessage))
             return errorMessage;
 
@@ -23,7 +25,9 @@ public class BreakpointTools
     [McpServerTool, Description("Add a conditional breakpoint at a specific file and line. filePath may be absolute or relative to the open solution.")]
     public static string BreakpointAddConditional(string filePath, int lineNumber, string condition)
     {
-        var dte = DteConnector.GetDte();
+        if (lineNumber <= 0)
+            return "lineNumber must be a positive integer.";
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
         if (!TryResolveSourceFile(dte, filePath, out var resolvedPath, out var errorMessage))
             return errorMessage;
 
@@ -38,7 +42,7 @@ public class BreakpointTools
     [McpServerTool, Description("Remove a breakpoint at a specific file and line number. filePath may be absolute or relative to the open solution.")]
     public static string BreakpointRemove(string filePath, int lineNumber)
     {
-        var dte = DteConnector.GetDte();
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
         var matches = FindMatchingBreakpoints(dte, filePath, lineNumber);
         if (matches.Count == 1)
         {
@@ -56,7 +60,7 @@ public class BreakpointTools
     [McpServerTool, Description("Toggle a breakpoint enabled/disabled at a specific file and line. filePath may be absolute or relative to the open solution.")]
     public static string BreakpointToggle(string filePath, int lineNumber)
     {
-        var dte = DteConnector.GetDte();
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
         var matches = FindMatchingBreakpoints(dte, filePath, lineNumber);
         if (matches.Count == 1)
         {
@@ -75,7 +79,7 @@ public class BreakpointTools
     [McpServerTool, Description("List all breakpoints")]
     public static string BreakpointList()
     {
-        var dte = DteConnector.GetDte();
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
         var breakpoints = GetBreakpointSnapshot(dte);
         var sb = new StringBuilder();
         sb.AppendLine($"Total breakpoints: {breakpoints.Count}");
@@ -93,7 +97,7 @@ public class BreakpointTools
     [McpServerTool, Description("Remove all breakpoints")]
     public static string BreakpointRemoveAll()
     {
-        var dte = DteConnector.GetDte();
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
         var breakpoints = GetBreakpointSnapshot(dte);
         var count = breakpoints.Count;
 
@@ -108,7 +112,9 @@ public class BreakpointTools
     [McpServerTool, Description("Add a tracepoint that logs a message to debug output without breaking execution. filePath may be absolute or relative to the open solution. Message supports tokens: {expression}, $FUNCTION, $CALLER, $CALLSTACK, $THREAD, $PID")]
     public static string BreakpointAddTracepoint(string filePath, int lineNumber, string message)
     {
-        var dte = DteConnector.GetDte();
+        if (lineNumber <= 0)
+            return "lineNumber must be a positive integer.";
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
         if (!TryResolveSourceFile(dte, filePath, out var resolvedPath, out var errorMessage))
             return errorMessage;
 
@@ -119,8 +125,8 @@ public class BreakpointTools
             // Message and BreakWhenHit setters may not be exposed in the interop type,
             // use dynamic to access the COM setter directly.
             dynamic dbp = bp;
-            dbp.Message = message;
-            dbp.BreakWhenHit = false;
+            DteConnector.ExecuteWithComRetry(() => { dbp.Message = message; });
+            DteConnector.ExecuteWithComRetry(() => { dbp.BreakWhenHit = false; });
         }
 
         return $"Tracepoint added at {resolvedPath}:{lineNumber} with message: \"{message}\"";
@@ -129,7 +135,11 @@ public class BreakpointTools
     [McpServerTool, Description("Add a hit count breakpoint that only breaks after being hit a specified number of times. filePath may be absolute or relative to the open solution. hitCountType: 'equal' (break on Nth hit), 'gte' (break on Nth and every subsequent hit), 'multiple' (break on every Nth hit)")]
     public static string BreakpointAddHitCount(string filePath, int lineNumber, int hitCount, string hitCountType = "equal")
     {
-        var dte = DteConnector.GetDte();
+        if (lineNumber <= 0)
+            return "lineNumber must be a positive integer.";
+        if (hitCount <= 0)
+            return "hitCount must be a positive integer.";
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
         if (!TryResolveSourceFile(dte, filePath, out var resolvedPath, out var errorMessage))
             return errorMessage;
 
@@ -148,8 +158,8 @@ public class BreakpointTools
             // HitCountType and HitCountTarget setters are not exposed in the interop type,
             // use dynamic to access the COM setter directly.
             dynamic dbp = bp;
-            dbp.HitCountType = type;
-            dbp.HitCountTarget = hitCount;
+            DteConnector.ExecuteWithComRetry(() => { dbp.HitCountType = type; });
+            DteConnector.ExecuteWithComRetry(() => { dbp.HitCountTarget = hitCount; });
         }
 
         return $"Hit count breakpoint added at {resolvedPath}:{lineNumber} (breaks when hit count {hitCountType} {hitCount})";

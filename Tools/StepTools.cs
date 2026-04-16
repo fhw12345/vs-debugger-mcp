@@ -12,8 +12,8 @@ public class StepTools
     [McpServerTool, Description("Step over (F10) - execute current line and move to next")]
     public static string DebugStepOver()
     {
-        var dte = DteConnector.GetDte();
-        if (!TryRequireMode(dte, dbgDebugMode.dbgBreakMode, "Step over requires break mode. Pause at a breakpoint first.", out var message))
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
+        if (!DteConnector.TryRequireMode(dte, dbgDebugMode.dbgBreakMode, "Step over requires break mode. Pause at a breakpoint first.", out var message))
             return message;
 
         DteConnector.ExecuteWithComRetry(() => dte.Debugger.StepOver(false));
@@ -23,8 +23,8 @@ public class StepTools
     [McpServerTool, Description("Step into (F11) - step into the function call")]
     public static string DebugStepInto()
     {
-        var dte = DteConnector.GetDte();
-        if (!TryRequireMode(dte, dbgDebugMode.dbgBreakMode, "Step into requires break mode. Pause at a breakpoint first.", out var message))
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
+        if (!DteConnector.TryRequireMode(dte, dbgDebugMode.dbgBreakMode, "Step into requires break mode. Pause at a breakpoint first.", out var message))
             return message;
 
         DteConnector.ExecuteWithComRetry(() => dte.Debugger.StepInto(false));
@@ -34,8 +34,8 @@ public class StepTools
     [McpServerTool, Description("Step out (Shift+F11) - step out of current function")]
     public static string DebugStepOut()
     {
-        var dte = DteConnector.GetDte();
-        if (!TryRequireMode(dte, dbgDebugMode.dbgBreakMode, "Step out requires break mode. Pause at a breakpoint first.", out var message))
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
+        if (!DteConnector.TryRequireMode(dte, dbgDebugMode.dbgBreakMode, "Step out requires break mode. Pause at a breakpoint first.", out var message))
             return message;
 
         DteConnector.ExecuteWithComRetry(() => dte.Debugger.StepOut(false));
@@ -45,7 +45,7 @@ public class StepTools
     [McpServerTool, Description("Continue execution (F5)")]
     public static string DebugContinue()
     {
-        var dte = DteConnector.GetDte();
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
         var mode = DteConnector.ExecuteWithComRetry(() => dte.Debugger.CurrentMode);
         if (mode == dbgDebugMode.dbgRunMode)
             return "Already running.";
@@ -60,8 +60,8 @@ public class StepTools
     [McpServerTool, Description("Run to cursor position")]
     public static string DebugRunToCursor()
     {
-        var dte = DteConnector.GetDte();
-        if (!TryRequireMode(dte, dbgDebugMode.dbgBreakMode, "Run to cursor requires break mode. Pause at a breakpoint first.", out var message))
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
+        if (!DteConnector.TryRequireMode(dte, dbgDebugMode.dbgBreakMode, "Run to cursor requires break mode. Pause at a breakpoint first.", out var message))
             return message;
 
         DteConnector.ExecuteWithComRetry(() => dte.Debugger.RunToCursor(false));
@@ -124,24 +124,13 @@ public class StepTools
         }
     }
 
-    private static bool TryRequireMode(DTE2 dte, dbgDebugMode requiredMode, string userMessage, out string message)
-    {
-        var currentMode = DteConnector.ExecuteWithComRetry(() => dte.Debugger.CurrentMode);
-        if (currentMode == requiredMode)
-        {
-            message = string.Empty;
-            return true;
-        }
-
-        message = $"{userMessage} Current mode: {currentMode}.";
-        return false;
-    }
-
     [McpServerTool, Description("Set next statement - move the execution pointer to a specific line in the current file (requires Break mode)")]
     public static string DebugSetNextStatement(int lineNumber)
     {
-        var dte = DteConnector.GetDte();
-        if (!TryRequireMode(dte, dbgDebugMode.dbgBreakMode, "Set next statement requires break mode. Pause at a breakpoint first.", out var modeMessage))
+        if (lineNumber <= 0)
+            return "lineNumber must be a positive integer.";
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
+        if (!DteConnector.TryRequireMode(dte, dbgDebugMode.dbgBreakMode, "Set next statement requires break mode. Pause at a breakpoint first.", out var modeMessage))
             return modeMessage;
 
         try

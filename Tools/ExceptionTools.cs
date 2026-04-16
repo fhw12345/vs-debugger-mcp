@@ -12,8 +12,8 @@ public class ExceptionTools
     [McpServerTool, Description("Get current exception information when stopped at an exception (requires Break mode). Shows exception type, message, stack trace, and inner exception.")]
     public static string ExceptionGetCurrent()
     {
-        var dte = DteConnector.GetDte();
-        if (!TryRequireBreakMode(dte, "Exception inspection requires break mode. Pause at an exception or breakpoint first.", out var modeMessage))
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
+        if (!DteConnector.TryRequireMode(dte, dbgDebugMode.dbgBreakMode, "Exception inspection requires break mode. Pause at an exception or breakpoint first.", out var modeMessage))
             return modeMessage;
 
         var sb = new StringBuilder();
@@ -47,7 +47,7 @@ public class ExceptionTools
     [McpServerTool, Description("Enable first-chance exception breaking for a specific CLR exception type (e.g. 'System.NullReferenceException'). This is best-effort and may not work on all VS versions.")]
     public static string ExceptionEnableBreak(string exceptionType)
     {
-        var dte = DteConnector.GetDte();
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
 
         try
         {
@@ -69,8 +69,8 @@ public class ExceptionTools
                         // Exception type may already exist in the list
                     }
 
-                    group.SetBreakWhenThrown(true, exGroups.Item("Common Language Runtime Exceptions"));
-                    return $"First-chance break enabled for CLR exceptions (including {exceptionType}).";
+                    group.SetBreakWhenThrown(true, group.Item(exceptionType));
+                    return $"First-chance break enabled for {exceptionType}.";
                 }
             }
 
@@ -97,7 +97,7 @@ public class ExceptionTools
     [McpServerTool, Description("List exception groups and their settings")]
     public static string ExceptionListSettings()
     {
-        var dte = DteConnector.GetDte();
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
         var sb = new StringBuilder();
 
         try
@@ -118,18 +118,5 @@ public class ExceptionTools
         }
 
         return sb.ToString();
-    }
-
-    private static bool TryRequireBreakMode(DTE2 dte, string userMessage, out string message)
-    {
-        var currentMode = DteConnector.ExecuteWithComRetry(() => dte.Debugger.CurrentMode);
-        if (currentMode == dbgDebugMode.dbgBreakMode)
-        {
-            message = string.Empty;
-            return true;
-        }
-
-        message = $"{userMessage} Current mode: {currentMode}.";
-        return false;
     }
 }

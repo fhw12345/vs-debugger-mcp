@@ -14,7 +14,7 @@ public static class McpLogger
     public static void Log(string message)
     {
         var entry = $"[{DateTime.Now:HH:mm:ss.fff}] {message}";
-        Console.WriteLine(entry);
+        Console.Error.WriteLine(entry);
         try
         {
             lock (Lock)

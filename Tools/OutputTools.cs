@@ -12,7 +12,7 @@ public class OutputTools
     [McpServerTool, Description("Read content from the Debug output window pane. Returns the last N lines (default 50).")]
     public static string OutputReadDebug(int lastNLines = 50)
     {
-        var dte = DteConnector.GetDte();
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
         lastNLines = NormalizeLineCount(lastNLines);
 
         try
@@ -33,7 +33,7 @@ public class OutputTools
     [McpServerTool, Description("List all output window panes")]
     public static string OutputListPanes()
     {
-        var dte = DteConnector.GetDte();
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
         var panes = GetPaneSnapshot(dte);
         var sb = new StringBuilder();
 
@@ -50,7 +50,7 @@ public class OutputTools
     [McpServerTool, Description("Read content from a specific output window pane by name (e.g. 'Build', 'Debug'). Returns the last N lines (default 50).")]
     public static string OutputReadPane(string paneName, int lastNLines = 50)
     {
-        var dte = DteConnector.GetDte();
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
         lastNLines = NormalizeLineCount(lastNLines);
 
         try
@@ -70,8 +70,8 @@ public class OutputTools
     [McpServerTool, Description("Execute a command in the Immediate window context and return the result (requires Break mode). Evaluates expressions, calls methods, or inspects values.")]
     public static string OutputImmediateExecute(string command)
     {
-        var dte = DteConnector.GetDte();
-        if (!TryRequireBreakMode(dte, "Immediate execution requires break mode. Pause at a breakpoint first.", out var modeMessage))
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
+        if (!DteConnector.TryRequireMode(dte, dbgDebugMode.dbgBreakMode, "Immediate execution requires break mode. Pause at a breakpoint first.", out var modeMessage))
             return modeMessage;
 
         try
@@ -175,18 +175,5 @@ public class OutputTools
     private static string NormalizePaneName(string paneName)
     {
         return paneName.Trim().ToLowerInvariant();
-    }
-
-    private static bool TryRequireBreakMode(DTE2 dte, string userMessage, out string message)
-    {
-        var currentMode = DteConnector.ExecuteWithComRetry(() => dte.Debugger.CurrentMode);
-        if (currentMode == dbgDebugMode.dbgBreakMode)
-        {
-            message = string.Empty;
-            return true;
-        }
-
-        message = $"{userMessage} Current mode: {currentMode}.";
-        return false;
     }
 }

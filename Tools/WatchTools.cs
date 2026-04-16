@@ -12,8 +12,8 @@ public class WatchTools
     [McpServerTool, Description("Evaluate a watch expression and expand its members in the current debug context (requires Break mode)")]
     public static string WatchEvaluate(string expression)
     {
-        var dte = DteConnector.GetDte();
-        if (!TryRequireBreakMode(dte, "Watch evaluation requires break mode. Pause at a breakpoint first.", out var modeMessage))
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
+        if (!DteConnector.TryRequireMode(dte, dbgDebugMode.dbgBreakMode, "Watch evaluation requires break mode. Pause at a breakpoint first.", out var modeMessage))
             return modeMessage;
 
         var result = DteConnector.ExecuteWithComRetry(() => dte.Debugger.GetExpression(expression, false, 5000));
@@ -61,8 +61,8 @@ public class WatchTools
     [McpServerTool, Description("Evaluate multiple watch expressions at once (requires Break mode). Pass expressions separated by semicolons, e.g. 'x;y;obj.Name'")]
     public static string WatchEvaluateMultiple(string expressions)
     {
-        var dte = DteConnector.GetDte();
-        if (!TryRequireBreakMode(dte, "Watch evaluation requires break mode. Pause at a breakpoint first.", out var modeMessage))
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
+        if (!DteConnector.TryRequireMode(dte, dbgDebugMode.dbgBreakMode, "Watch evaluation requires break mode. Pause at a breakpoint first.", out var modeMessage))
             return modeMessage;
 
         var sb = new StringBuilder();
@@ -99,7 +99,7 @@ public class WatchTools
     [McpServerTool, Description("Add a watch expression to Visual Studio's Watch window")]
     public static string WatchAdd(string expression)
     {
-        var dte = DteConnector.GetDte();
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
 
         try
         {
@@ -115,7 +115,7 @@ public class WatchTools
     [McpServerTool, Description("Remove all watch expressions from Watch Window 1")]
     public static string WatchClearAll()
     {
-        var dte = DteConnector.GetDte();
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
 
         try
         {
@@ -128,18 +128,5 @@ public class WatchTools
         {
             return $"Failed to clear watch expressions: {ex.Message}";
         }
-    }
-
-    private static bool TryRequireBreakMode(DTE2 dte, string userMessage, out string message)
-    {
-        var currentMode = DteConnector.ExecuteWithComRetry(() => dte.Debugger.CurrentMode);
-        if (currentMode == dbgDebugMode.dbgBreakMode)
-        {
-            message = string.Empty;
-            return true;
-        }
-
-        message = $"{userMessage} Current mode: {currentMode}.";
-        return false;
     }
 }

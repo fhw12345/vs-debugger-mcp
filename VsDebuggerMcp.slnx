@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/test/">
+    <Project Path="test/TestDebugApp/TestDebugApp.csproj" />
+    <Project Path="test/VsDebuggerMcp.Tests/VsDebuggerMcp.Tests.csproj" />
+  </Folder>
+  <Project Path="VsDebuggerMcp.csproj" />
+</Solution>

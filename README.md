@@ -38,7 +38,7 @@ VsDebuggerMcp.exe                # starts on http://localhost:5050/sse
 | Category | Capabilities |
 |----------|-------------|
 | **Build** | Build/rebuild/clean solution or project, list projects, query build status |
-| **Debug Lifecycle** | Start/stop/restart, attach by PID or name, query debug mode |
+| **Debug Lifecycle** | Open/close solutions, start/stop/restart, attach by PID or name, query debug mode |
 | **Breakpoints** | Add/remove/toggle, conditional, tracepoints, hit count |
 | **Stepping** | Step over/into/out, continue, run to cursor, set next statement |
 | **Inspection** | Locals, evaluate expressions, call stack, threads, variable members |
@@ -56,7 +56,7 @@ claude plugin install vs-debugger-mcp
 claude plugin enable vs-debugger-mcp
 ```
 
-The server auto-starts on every session. All 48 MCP tools are available immediately.
+The server auto-starts on every session. All 52 MCP tools are available immediately.
 
 <details>
 <summary>Alternative: manual settings.json</summary>
@@ -210,10 +210,12 @@ Ready-to-copy config templates are in the [`editors/`](editors/) directory.
 </details>
 
 <details>
-<summary><strong>Debug Lifecycle Tools</strong> (10 tools)</summary>
+<summary><strong>Debug Lifecycle Tools</strong> (12 tools)</summary>
 
 | Tool | Description |
 |------|-------------|
+| `OpenSolution` | Open a .sln or .csproj in Visual Studio (launches VS if not running) |
+| `CloseSolution` | Close the current solution, optionally quit VS |
 | `DebugStart` | Start debugging (F5) |
 | `DebugStartWithBuild` | Build then start debugging the startup project |
 | `DebugStartWithoutDebugging` | Start without debugging (Ctrl+F5) |

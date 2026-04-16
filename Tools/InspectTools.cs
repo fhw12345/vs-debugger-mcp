@@ -12,8 +12,8 @@ public class InspectTools
     [McpServerTool, Description("Get local variables in the current stack frame")]
     public static string DebugGetLocals()
     {
-        var dte = DteConnector.GetDte();
-        if (!TryRequireBreakMode(dte, "Get locals requires break mode. Pause at a breakpoint first.", out var modeMessage))
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
+        if (!DteConnector.TryRequireMode(dte, dbgDebugMode.dbgBreakMode, "Get locals requires break mode. Pause at a breakpoint first.", out var modeMessage))
             return modeMessage;
 
         try
@@ -56,47 +56,65 @@ public class InspectTools
     [McpServerTool, Description("Evaluate an expression in the current debug context")]
     public static string DebugEvaluate(string expression)
     {
-        var dte = DteConnector.GetDte();
-        if (!TryRequireBreakMode(dte, "Evaluate requires break mode. Pause at a breakpoint first.", out var modeMessage))
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
+        if (!DteConnector.TryRequireMode(dte, dbgDebugMode.dbgBreakMode, "Evaluate requires break mode. Pause at a breakpoint first.", out var modeMessage))
             return modeMessage;
 
         var result = DteConnector.ExecuteWithComRetry(() => dte.Debugger.GetExpression(expression, false, 5000));
-        if (result.IsValidValue)
+        var isValid = DteConnector.ExecuteWithComRetry(() => result.IsValidValue);
+        if (isValid)
         {
-            return $"{expression} = {result.Value} (Type: {result.Type})";
+            var value = DteConnector.ExecuteWithComRetry(() => result.Value);
+            var type = DteConnector.ExecuteWithComRetry(() => result.Type);
+            return $"{expression} = {value} (Type: {type})";
         }
 
-        return $"Could not evaluate '{expression}': {result.Value}";
+        var errorValue = DteConnector.ExecuteWithComRetry(() => result.Value);
+        return $"Could not evaluate '{expression}': {errorValue}";
     }
 
     [McpServerTool, Description("Get the current call stack")]
     public static string DebugGetCallStack()
     {
-        var dte = DteConnector.GetDte();
-        if (!TryRequireBreakMode(dte, "Get call stack requires break mode. Pause at a breakpoint first.", out var modeMessage))
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
+        if (!DteConnector.TryRequireMode(dte, dbgDebugMode.dbgBreakMode, "Get call stack requires break mode. Pause at a breakpoint first.", out var modeMessage))
             return modeMessage;
 
         var sb = new StringBuilder();
         sb.AppendLine("Call Stack:");
 
         var thread = DteConnector.ExecuteWithComRetry(() => dte.Debugger.CurrentThread);
-        int i = 0;
-        foreach (StackFrame frame in thread.StackFrames)
+        var frames = DteConnector.ExecuteWithComRetry(() =>
         {
-            var marker = i == 0 ? " -> " : "    ";
-            string funcName = frame.FunctionName;
-            string lineInfo;
+            var list = new List<StackFrame>();
+            foreach (StackFrame f in thread.StackFrames) list.Add(f);
+            return list;
+        });
+
+        int i = 0;
+        foreach (var frame in frames)
+        {
             try
             {
-                int lineNum = ((dynamic)frame).LineNumber;
-                lineInfo = $" (line {lineNum})";
+                var marker = i == 0 ? " -> " : "    ";
+                var funcName = DteConnector.ExecuteWithComRetry(() => frame.FunctionName);
+                string lineInfo;
+                try
+                {
+                    int lineNum = DteConnector.ExecuteWithComRetry(() => ((dynamic)frame).LineNumber);
+                    lineInfo = $" (line {lineNum})";
+                }
+                catch
+                {
+                    lineInfo = "";
+                }
+
+                sb.AppendLine($"{marker}[{i}] {funcName}{lineInfo}");
             }
             catch
             {
-                lineInfo = "";
+                // Skip frames that can't be inspected
             }
-
-            sb.AppendLine($"{marker}[{i}] {funcName}{lineInfo}");
             i++;
         }
 
@@ -106,15 +124,15 @@ public class InspectTools
     [McpServerTool, Description("Get the current execution location (file, line, function) with a small source preview when available")]
     public static string DebugGetCurrentLocation()
     {
-        var dte = DteConnector.GetDte();
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
         return StepTools.DescribeCurrentLocation(dte);
     }
 
     [McpServerTool, Description("List all threads in the current process")]
     public static string DebugGetThreads()
     {
-        var dte = DteConnector.GetDte();
-        if (!TryRequireBreakMode(dte, "Get threads requires break mode. Pause at a breakpoint first.", out var modeMessage))
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
+        if (!DteConnector.TryRequireMode(dte, dbgDebugMode.dbgBreakMode, "Get threads requires break mode. Pause at a breakpoint first.", out var modeMessage))
             return modeMessage;
 
         var sb = new StringBuilder();
@@ -123,20 +141,30 @@ public class InspectTools
 
         foreach (var thread in GetThreadSnapshot(dte))
         {
-            var marker = thread.ID == currentThread.ID ? " -> " : "    ";
-            var name = !string.IsNullOrEmpty(thread.Name) ? thread.Name : $"Thread {thread.ID}";
-            string location;
             try
             {
-                dynamic topFrame = thread.StackFrames.Item(1);
-                location = $"{topFrame.FunctionName}";
+                var threadId = DteConnector.ExecuteWithComRetry(() => thread.ID);
+                var currentId = DteConnector.ExecuteWithComRetry(() => currentThread.ID);
+                var marker = threadId == currentId ? " -> " : "    ";
+                var threadName = DteConnector.ExecuteWithComRetry(() => thread.Name);
+                var name = !string.IsNullOrEmpty(threadName) ? threadName : $"Thread {threadId}";
+                string location;
+                try
+                {
+                    dynamic topFrame = DteConnector.ExecuteWithComRetry(() => thread.StackFrames.Item(1));
+                    location = $"{topFrame.FunctionName}";
+                }
+                catch
+                {
+                    location = "(unknown)";
+                }
+
+                sb.AppendLine($"{marker}[{threadId}] {name} - {location}");
             }
             catch
             {
-                location = "(unknown)";
+                // Skip threads that can't be inspected
             }
-
-            sb.AppendLine($"{marker}[{thread.ID}] {name} - {location}");
         }
 
         return sb.ToString();
@@ -145,8 +173,8 @@ public class InspectTools
     [McpServerTool, Description("Expand a variable to see its properties/fields")]
     public static string DebugInspectVariable(string variablePath)
     {
-        var dte = DteConnector.GetDte();
-        if (!TryRequireBreakMode(dte, "Inspect variable requires break mode. Pause at a breakpoint first.", out var modeMessage))
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
+        if (!DteConnector.TryRequireMode(dte, dbgDebugMode.dbgBreakMode, "Inspect variable requires break mode. Pause at a breakpoint first.", out var modeMessage))
             return modeMessage;
 
         var result = DteConnector.ExecuteWithComRetry(() => dte.Debugger.GetExpression(variablePath, false, 5000));
@@ -187,8 +215,8 @@ public class InspectTools
     [McpServerTool, Description("Freeze a thread by ID to prevent it from executing (requires Break mode). Use DebugGetThreads to find thread IDs.")]
     public static string DebugFreezeThread(int threadId)
     {
-        var dte = DteConnector.GetDte();
-        if (!TryRequireBreakMode(dte, "Freeze thread requires break mode. Pause at a breakpoint first.", out var modeMessage))
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
+        if (!DteConnector.TryRequireMode(dte, dbgDebugMode.dbgBreakMode, "Freeze thread requires break mode. Pause at a breakpoint first.", out var modeMessage))
             return modeMessage;
 
         foreach (var thread in GetThreadSnapshot(dte))
@@ -207,8 +235,8 @@ public class InspectTools
     [McpServerTool, Description("Thaw (unfreeze) a thread by ID to allow it to execute again (requires Break mode). Use DebugGetThreads to find thread IDs.")]
     public static string DebugThawThread(int threadId)
     {
-        var dte = DteConnector.GetDte();
-        if (!TryRequireBreakMode(dte, "Thaw thread requires break mode. Pause at a breakpoint first.", out var modeMessage))
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
+        if (!DteConnector.TryRequireMode(dte, dbgDebugMode.dbgBreakMode, "Thaw thread requires break mode. Pause at a breakpoint first.", out var modeMessage))
             return modeMessage;
 
         foreach (var thread in GetThreadSnapshot(dte))
@@ -227,8 +255,8 @@ public class InspectTools
     [McpServerTool, Description("Switch the debugger context to a specific thread by ID (requires Break mode). Use DebugGetThreads to find thread IDs.")]
     public static string DebugSwitchThread(int threadId)
     {
-        var dte = DteConnector.GetDte();
-        if (!TryRequireBreakMode(dte, "Switch thread requires break mode. Pause at a breakpoint first.", out var modeMessage))
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
+        if (!DteConnector.TryRequireMode(dte, dbgDebugMode.dbgBreakMode, "Switch thread requires break mode. Pause at a breakpoint first.", out var modeMessage))
             return modeMessage;
 
         foreach (var thread in GetThreadSnapshot(dte))
@@ -254,19 +282,6 @@ public class InspectTools
         }
 
         return $"Thread with ID {threadId} not found.";
-    }
-
-    private static bool TryRequireBreakMode(DTE2 dte, string userMessage, out string message)
-    {
-        var currentMode = DteConnector.ExecuteWithComRetry(() => dte.Debugger.CurrentMode);
-        if (currentMode == dbgDebugMode.dbgBreakMode)
-        {
-            message = string.Empty;
-            return true;
-        }
-
-        message = $"{userMessage} Current mode: {currentMode}.";
-        return false;
     }
 
     private static List<EnvDTE.Thread> GetThreadSnapshot(DTE2 dte)

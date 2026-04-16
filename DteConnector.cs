@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using EnvDTE;
@@ -16,24 +19,49 @@ public static class DteConnector
     private const int RpcECallRejected = unchecked((int)0x80010001);
 
     private static DTE2? _dte;
+    private static readonly object _dteLock = new();
 
     public static DTE2 GetDte()
     {
-        if (_dte != null)
+        lock (_dteLock)
         {
-            try
+            if (_dte != null)
             {
-                _ = ExecuteWithComRetry(() => _dte.Version);
-                return _dte;
+                try
+                {
+                    _ = ExecuteWithComRetry(() => _dte.Version);
+                    return _dte;
+                }
+                catch (COMException)
+                {
+                    _dte = null;
+                }
             }
-            catch (COMException)
-            {
-                _dte = null;
-            }
-        }
 
-        _dte = ConnectToVisualStudio();
-        return _dte;
+            _dte = ConnectToVisualStudio();
+            return _dte;
+        }
+    }
+
+    public static bool TryGetDte([NotNullWhen(true)] out DTE2? dte, out string error, [CallerMemberName] string? caller = null)
+    {
+        var toolName = caller ?? "unknown";
+        McpLogger.Log(toolName, "enter");
+        var sw = Stopwatch.StartNew();
+        try
+        {
+            dte = GetDte();
+            error = string.Empty;
+            McpLogger.Log(toolName, "DTE ready", $"{sw.ElapsedMilliseconds}ms");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            dte = null;
+            error = ex.Message;
+            McpLogger.Log(toolName, "DTE unavailable", ex.Message);
+            return false;
+        }
     }
 
     private static DTE2 ConnectToVisualStudio()
@@ -43,7 +71,7 @@ public static class DteConnector
         if (dte != null)
         {
             var version = ExecuteWithComRetry(() => dte.Version);
-            Console.WriteLine($"Connected to Visual Studio (Version: {version})");
+            McpLogger.Log("DteConnector", "connected", $"Visual Studio v{version}");
             return dte;
         }
 
@@ -205,6 +233,7 @@ public static class DteConnector
             catch (COMException ex) when (IsTransientBusyComException(ex) && attempt < maxAttempts)
             {
                 lastException = ex;
+                McpLogger.Log("COM", "retry", $"attempt {attempt}/{maxAttempts}, delay {baseDelayMs * attempt}ms — {ex.ErrorCode:X}");
                 System.Threading.Thread.Sleep(baseDelayMs * attempt);
             }
         }
@@ -218,5 +247,52 @@ public static class DteConnector
     private static bool IsTransientBusyComException(COMException ex)
     {
         return ex.ErrorCode == RpcEServerCallRetryLater || ex.ErrorCode == RpcECallRejected;
+    }
+
+    public static async Task<T> ExecuteWithComRetryAsync<T>(Func<T> action, CancellationToken ct = default, int maxAttempts = 5, int baseDelayMs = 75)
+    {
+        COMException? lastException = null;
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                return action();
+            }
+            catch (COMException ex) when (IsTransientBusyComException(ex) && attempt < maxAttempts)
+            {
+                lastException = ex;
+                McpLogger.Log("COM", "async retry", $"attempt {attempt}/{maxAttempts}, delay {baseDelayMs * attempt}ms — {ex.ErrorCode:X}");
+                await Task.Delay(baseDelayMs * attempt, ct);
+            }
+        }
+
+        if (lastException != null)
+            throw lastException;
+
+        return action();
+    }
+
+    public static async Task ExecuteWithComRetryAsync(Action action, CancellationToken ct = default, int maxAttempts = 5, int baseDelayMs = 75)
+    {
+        await ExecuteWithComRetryAsync(() =>
+        {
+            action();
+            return true;
+        }, ct, maxAttempts, baseDelayMs);
+    }
+
+    public static bool TryRequireMode(DTE2 dte, dbgDebugMode requiredMode, string userMessage, out string message)
+    {
+        var currentMode = ExecuteWithComRetry(() => dte.Debugger.CurrentMode);
+        if (currentMode == requiredMode)
+        {
+            message = string.Empty;
+            return true;
+        }
+
+        message = $"{userMessage} Current mode: {currentMode}.";
+        return false;
     }
 }

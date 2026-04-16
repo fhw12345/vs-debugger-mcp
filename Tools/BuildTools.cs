@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Diagnostics;
 using EnvDTE;
 using EnvDTE80;
 using ModelContextProtocol.Server;
@@ -10,12 +9,12 @@ namespace VsDebuggerMcp.Tools;
 public class BuildTools
 {
     [McpServerTool, Description("Build the entire solution")]
-    public static string BuildSolution()
+    public static async Task<string> BuildSolution()
     {
-        var dte = DteConnector.GetDte();
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
         try
         {
-            var build = ExecuteBuild(dte);
+            var build = await ExecuteBuildAsync(dte);
             return $"Build of '{build.TargetName}' completed. State: {build.State}, Failed projects: {build.FailedProjects}{build.Errors}";
         }
         catch (Exception ex)
@@ -25,13 +24,13 @@ public class BuildTools
     }
 
     [McpServerTool, Description("Rebuild the entire solution")]
-    public static string RebuildSolution()
+    public static async Task<string> RebuildSolution()
     {
-        var dte = DteConnector.GetDte();
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
         try
         {
             DteConnector.ExecuteWithComRetry(() => dte.ExecuteCommand("Build.RebuildSolution"));
-            WaitForBuildCompletion(dte);
+            await WaitForBuildCompletionAsync(dte);
 
             var state = DteConnector.ExecuteWithComRetry(() => dte.Solution.SolutionBuild.BuildState);
             var info = DteConnector.ExecuteWithComRetry(() => dte.Solution.SolutionBuild.LastBuildInfo);
@@ -45,12 +44,12 @@ public class BuildTools
     }
 
     [McpServerTool, Description("Build a specific project by name. The name can be a substring match (e.g. 'MyProject' will match 'MyProject\\MyProject.csproj'). Use ListProjects to see available project names.")]
-    public static string BuildProject(string projectName, string configuration = "Debug")
+    public static async Task<string> BuildProject(string projectName, string configuration = "Debug")
     {
-        var dte = DteConnector.GetDte();
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
         try
         {
-            var build = ExecuteBuild(dte, projectName, configuration);
+            var build = await ExecuteBuildAsync(dte, projectName, configuration);
             return $"Build of '{build.TargetName}' completed. State: {build.State}, Failed projects: {build.FailedProjects}{build.Errors}";
         }
         catch (Exception ex)
@@ -62,7 +61,7 @@ public class BuildTools
     [McpServerTool, Description("List all projects in the current solution with their unique names")]
     public static string ListProjects()
     {
-        var dte = DteConnector.GetDte();
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
         var projects = DteConnector.ExecuteWithComRetry(() => dte.Solution.Projects);
         if (DteConnector.ExecuteWithComRetry(() => projects.Count) == 0)
             return "No projects found in the solution.";
@@ -70,7 +69,7 @@ public class BuildTools
         var lines = new List<string>();
         foreach (Project project in projects)
         {
-            CollectProjects(project, lines);
+            TraverseProjects(project, lines, p => $"  - {p.Name} (UniqueName: {p.UniqueName})");
         }
 
         return "Projects in solution:\n" + string.Join("\n", lines);
@@ -79,7 +78,7 @@ public class BuildTools
     [McpServerTool, Description("Get current build state (idle, building, or done)")]
     public static string GetBuildStatus()
     {
-        var dte = DteConnector.GetDte();
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
         var state = DteConnector.ExecuteWithComRetry(() => dte.Solution.SolutionBuild.BuildState);
         var info = DteConnector.ExecuteWithComRetry(() => dte.Solution.SolutionBuild.LastBuildInfo);
         return $"BuildState: {state}, LastBuildInfo (failed projects): {info}";
@@ -88,12 +87,12 @@ public class BuildTools
     [McpServerTool, Description("Clean the solution")]
     public static string CleanSolution()
     {
-        var dte = DteConnector.GetDte();
+        if (!DteConnector.TryGetDte(out var dte, out var dteError)) return dteError;
         DteConnector.ExecuteWithComRetry(() => dte.Solution.SolutionBuild.Clean(true));
         return "Clean completed.";
     }
 
-    internal static BuildInvocationResult ExecuteBuild(DTE2 dte, string? projectName = null, string configuration = "Debug")
+    internal static async Task<BuildInvocationResult> ExecuteBuildAsync(DTE2 dte, string? projectName = null, string configuration = "Debug")
     {
         string targetName;
 
@@ -108,7 +107,7 @@ public class BuildTools
             DteConnector.ExecuteWithComRetry(() => dte.Solution.SolutionBuild.BuildProject(configuration, targetName, true));
         }
 
-        WaitForBuildCompletion(dte);
+        await WaitForBuildCompletionAsync(dte);
 
         var state = DteConnector.ExecuteWithComRetry(() => dte.Solution.SolutionBuild.BuildState);
         var failedProjects = DteConnector.ExecuteWithComRetry(() => dte.Solution.SolutionBuild.LastBuildInfo);
@@ -125,7 +124,7 @@ public class BuildTools
         var allProjects = new List<Project>();
         foreach (Project project in dte.Solution.Projects)
         {
-            CollectProjectObjects(project, allProjects);
+            TraverseProjects(project, allProjects, p => p);
         }
 
         // 1. Exact match on UniqueName
@@ -164,53 +163,25 @@ public class BuildTools
             $"Project '{projectName}' not found. Available projects: {available}");
     }
 
-    private static void CollectProjectObjects(Project project, List<Project> result)
+    private static void TraverseProjects<T>(Project project, List<T> result, Func<Project, T> selector)
     {
         try
         {
             // Solution folders have Kind = "{66A26720-8FB5-11D2-AA7E-00C04F688DDE}"
             if (project.Kind == "{66A26720-8FB5-11D2-AA7E-00C04F688DDE}")
             {
-                // Recurse into solution folder sub-projects
                 if (project.ProjectItems != null)
                 {
                     foreach (ProjectItem item in project.ProjectItems)
                     {
                         if (item.SubProject != null)
-                            CollectProjectObjects(item.SubProject, result);
+                            TraverseProjects(item.SubProject, result, selector);
                     }
                 }
             }
             else
             {
-                result.Add(project);
-            }
-        }
-        catch (Exception)
-        {
-            // Skip inaccessible projects
-        }
-    }
-
-    private static void CollectProjects(Project project, List<string> lines)
-    {
-        try
-        {
-            if (project.Kind == "{66A26720-8FB5-11D2-AA7E-00C04F688DDE}")
-            {
-                // Solution folder - recurse
-                if (project.ProjectItems != null)
-                {
-                    foreach (ProjectItem item in project.ProjectItems)
-                    {
-                        if (item.SubProject != null)
-                            CollectProjects(item.SubProject, lines);
-                    }
-                }
-            }
-            else
-            {
-                lines.Add($"  - {project.Name} (UniqueName: {project.UniqueName})");
+                result.Add(selector(project));
             }
         }
         catch (Exception)
@@ -251,14 +222,14 @@ public class BuildTools
         }
     }
 
-    private static void WaitForBuildCompletion(DTE2 dte)
+    private static async Task WaitForBuildCompletionAsync(DTE2 dte, CancellationToken ct = default)
     {
-        var timeout = TimeSpan.FromMinutes(5);
-        var stopwatch = Stopwatch.StartNew();
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(TimeSpan.FromMinutes(5));
         var sawInProgress = false;
         var stableDoneSamples = 0;
 
-        while (stopwatch.Elapsed < timeout)
+        while (!cts.Token.IsCancellationRequested)
         {
             var state = DteConnector.ExecuteWithComRetry(() => dte.Solution.SolutionBuild.BuildState);
             if (state == vsBuildState.vsBuildStateInProgress)
@@ -276,10 +247,10 @@ public class BuildTools
                     return;
             }
 
-            System.Threading.Thread.Sleep(250);
+            await Task.Delay(250, cts.Token).ConfigureAwait(false);
         }
 
-        throw new TimeoutException($"Timed out waiting for build completion after {timeout.TotalMinutes:0} minutes.");
+        throw new TimeoutException("Timed out waiting for build completion after 5 minutes.");
     }
 
     internal readonly record struct BuildInvocationResult(
