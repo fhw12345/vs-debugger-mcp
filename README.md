@@ -1,57 +1,71 @@
 # VS Debugger MCP Server
 
-An MCP (Model Context Protocol) server that exposes Visual Studio debugging capabilities over HTTP/SSE, enabling AI assistants like Claude to programmatically control the Visual Studio debugger.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![.NET 8.0](https://img.shields.io/badge/.NET-8.0--windows-purple.svg)](https://dotnet.microsoft.com/download/dotnet/8.0)
+[![MCP Protocol](https://img.shields.io/badge/MCP-compatible-green.svg)](https://modelcontextprotocol.io)
 
-Available as a **Claude Code plugin** — install it once and the server auto-starts with every Claude Code session. Also works with **Cursor**, **GitHub Copilot**, **Cline**, **Continue**, **Windsurf**, and any other MCP-compatible client.
+Control Visual Studio's debugger from any AI coding agent — Claude Code, Cursor, GitHub Copilot, Cline, Continue, Windsurf, or any MCP client.
 
-## Features
+```
+AI Agent  →  MCP (SSE or stdio)  →  VsDebuggerMcp.exe  →  Visual Studio DTE2 COM API
+```
 
-- **Build Management** — Build/rebuild/clean solutions and projects, list projects, query build status with error details
-- **Debug Lifecycle** — Start/stop/restart debugging, attach to processes by PID or name, query debug mode
-- **Breakpoints** — Add/remove/toggle breakpoints, conditional breakpoints, tracepoints (log without breaking), hit count breakpoints
-- **Stepping** — Step over/into/out, continue, run to cursor, set next statement (move execution pointer)
-- **Inspection** — Get locals, evaluate expressions, call stack, threads, inspect variable members
-- **Thread Control** — Freeze/thaw threads, switch debugger context between threads
-- **Exception Handling** — View current exception details, configure first-chance exception breaking
-- **Output & Watch** — Read output/debug window panes, evaluate watch expressions, Immediate window execution
+## Quickstart
+
+```bash
+# Option A: Claude Code plugin (auto-starts the server)
+claude plugin marketplace add fhw12345/vs-debugger-mcp
+claude plugin install vs-debugger-mcp
+claude plugin enable vs-debugger-mcp
+
+# Option B: Any MCP client — stdio (agent launches the server)
+# Add to your agent's MCP config:
+#   command: "C:\path\to\VsDebuggerMcp.exe"
+#   args: ["--stdio"]
+
+# Option C: Any MCP client — SSE (connect to a running server)
+VsDebuggerMcp.exe                # starts on http://localhost:5050/sse
+```
 
 ## Requirements
 
-- Windows (COM interop required)
-- .NET 8.0 Runtime (or SDK if building from source)
-- Visual Studio (must be running for debugger features to work)
+- Windows (COM interop)
+- [.NET 8.0 Runtime](https://dotnet.microsoft.com/download/dotnet/8.0) (or SDK to build from source)
+- Visual Studio (must be running for debugger features)
+
+## Features
+
+| Category | Capabilities |
+|----------|-------------|
+| **Build** | Build/rebuild/clean solution or project, list projects, query build status |
+| **Debug Lifecycle** | Start/stop/restart, attach by PID or name, query debug mode |
+| **Breakpoints** | Add/remove/toggle, conditional, tracepoints, hit count |
+| **Stepping** | Step over/into/out, continue, run to cursor, set next statement |
+| **Inspection** | Locals, evaluate expressions, call stack, threads, variable members |
+| **Thread Control** | Freeze/thaw threads, switch debugger context |
+| **Exceptions** | Current exception details, first-chance breaking config |
+| **Output & Watch** | Read output panes, watch expressions, Immediate window |
 
 ## Installation
 
-### Option 1: Claude Code Plugin (Recommended)
-
-Install as a Claude Code plugin for automatic server startup on every session.
+### Claude Code (Plugin)
 
 ```bash
-# Step 1 — Add the marketplace
 claude plugin marketplace add fhw12345/vs-debugger-mcp
-
-# Step 2 — Install the plugin
 claude plugin install vs-debugger-mcp
-
-# Step 3 — Enable the plugin
 claude plugin enable vs-debugger-mcp
 ```
 
-Restart Claude Code. The server will auto-start on port 5050 and the `vs-debugger` MCP tools will be available immediately.
+The server auto-starts on every session. All 48 MCP tools are available immediately.
 
-#### Alternative: Manual settings.json Setup
-
-If you prefer editing settings directly, add to `~/.claude/settings.json`:
+<details>
+<summary>Alternative: manual settings.json</summary>
 
 ```json
 {
   "extraKnownMarketplaces": {
     "vs-debugger-marketplace": {
-      "source": {
-        "source": "github",
-        "repo": "fhw12345/vs-debugger-mcp"
-      }
+      "source": { "source": "github", "repo": "fhw12345/vs-debugger-mcp" }
     }
   },
   "enabledPlugins": {
@@ -59,67 +73,39 @@ If you prefer editing settings directly, add to `~/.claude/settings.json`:
   }
 }
 ```
+</details>
 
-#### Local Installation (for development)
-
-```bash
-claude plugin marketplace add /path/to/VsDebuggerMcp
-claude plugin install vs-debugger-mcp
-claude plugin enable vs-debugger-mcp
-```
-
-### Option 2: Manual MCP Registration
-
-If you prefer not to use the plugin system:
+<details>
+<summary>Alternative: manual MCP registration (no plugin)</summary>
 
 ```bash
-# Build and run the server
-dotnet build
-dotnet run
-
-# In another terminal, register with Claude Code
+dotnet run                        # or: dist/net8.0-windows/VsDebuggerMcp.exe
 claude mcp add --transport sse vs-debugger http://localhost:5050/sse
 ```
+</details>
 
-### Option 3: Run from Pre-built Binary
+### Cursor / Cline / Continue / Windsurf / GitHub Copilot
 
-```bash
-# Run the published binary directly
-dist/net8.0-windows/VsDebuggerMcp.exe
+All these agents support MCP. Pick **stdio** (recommended — agent auto-launches the server) or **SSE** (connect to a running server).
 
-# Register with Claude Code
-claude mcp add --transport sse vs-debugger http://localhost:5050/sse
-```
+#### stdio (recommended)
 
-### Plugin Management
+The agent launches `VsDebuggerMcp.exe --stdio` as a child process. No manual server management needed.
 
-```bash
-claude plugin list                    # List installed plugins
-claude plugin disable vs-debugger-mcp # Disable without uninstalling
-claude plugin uninstall vs-debugger-mcp # Uninstall the plugin
-claude plugin marketplace update      # Update all marketplaces
-```
+| Agent | Config file | Config |
+|-------|------------|--------|
+| **Cursor** | `.cursor/mcp.json` | `{ "mcpServers": { "vs-debugger": { "command": "C:\\path\\to\\VsDebuggerMcp.exe", "args": ["--stdio"] } } }` |
+| **GitHub Copilot** | `.vscode/mcp.json` | `{ "servers": { "vs-debugger": { "type": "stdio", "command": "C:\\path\\to\\VsDebuggerMcp.exe", "args": ["--stdio"] } } }` |
+| **Cline** | MCP Servers panel | `{ "mcpServers": { "vs-debugger": { "command": "C:\\path\\to\\VsDebuggerMcp.exe", "args": ["--stdio"] } } }` |
+| **Continue** | `.continue/mcpServers/mcp.json` | `{ "mcpServers": { "vs-debugger": { "command": "C:\\path\\to\\VsDebuggerMcp.exe", "args": ["--stdio"] } } }` |
+| **Windsurf** | `~/.codeium/windsurf/mcp_config.json` | `{ "mcpServers": { "vs-debugger": { "command": "C:\\path\\to\\VsDebuggerMcp.exe", "args": ["--stdio"] } } }` |
 
-## How It Works
+> **Note:** GitHub Copilot uses `"servers"` as the top-level key; all others use `"mcpServers"`.
 
-```
-AI Agent  →  MCP (SSE or stdio)  →  VsDebuggerMcp.exe  →  Visual Studio DTE2 COM API
-```
+<details>
+<summary>Full JSON examples</summary>
 
-The server supports two transport modes:
-
-- **SSE (default)** — Standalone HTTP server on port 5050. Start the server, then point your agent at `http://localhost:5050/sse`.
-- **stdio** — The agent launches the server as a child process and communicates via stdin/stdout. Use the `--stdio` flag.
-
-The server discovers running Visual Studio instances via the Windows Running Object Table (ROT) and controls them through the DTE2 COM automation interface. All 8 tool groups (build, debug lifecycle, breakpoints, stepping, inspection, exceptions, output, watch) are registered as MCP tools.
-
-## Multi-Agent Setup
-
-### Cursor
-
-Copy `editors/cursor/mcp.json` to your project's `.cursor/` directory, or add to `~/.cursor/mcp.json` globally.
-
-**stdio (recommended)** — Cursor launches the server automatically:
+**Cursor** (`.cursor/mcp.json` or `~/.cursor/mcp.json`):
 ```json
 {
   "mcpServers": {
@@ -131,24 +117,7 @@ Copy `editors/cursor/mcp.json` to your project's `.cursor/` directory, or add to
 }
 ```
 
-**SSE** — Connect to a running server:
-```json
-{
-  "mcpServers": {
-    "vs-debugger": {
-      "url": "http://localhost:5050/sse"
-    }
-  }
-}
-```
-
-### GitHub Copilot (VS Code)
-
-Add to `.vscode/mcp.json` in your workspace, or open **MCP: Open User Configuration** for global setup.
-
-> Note: Copilot uses `"servers"` as the top-level key, not `"mcpServers"`.
-
-**stdio (recommended):**
+**GitHub Copilot** (`.vscode/mcp.json`):
 ```json
 {
   "servers": {
@@ -161,24 +130,7 @@ Add to `.vscode/mcp.json` in your workspace, or open **MCP: Open User Configurat
 }
 ```
 
-**SSE:**
-```json
-{
-  "servers": {
-    "vs-debugger": {
-      "type": "sse",
-      "url": "http://localhost:5050/sse"
-    }
-  }
-}
-```
-
-### Cline
-
-Open **Cline → MCP Servers** in the VS Code sidebar and add the server, or edit the settings file directly:
-- Windows: `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\settings\cline_mcp_settings.json`
-
-**stdio (recommended):**
+**Cline** (`%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\settings\cline_mcp_settings.json`):
 ```json
 {
   "mcpServers": {
@@ -192,25 +144,7 @@ Open **Cline → MCP Servers** in the VS Code sidebar and add the server, or edi
 }
 ```
 
-**SSE:**
-```json
-{
-  "mcpServers": {
-    "vs-debugger": {
-      "type": "sse",
-      "url": "http://localhost:5050/sse",
-      "disabled": false,
-      "autoApprove": []
-    }
-  }
-}
-```
-
-### Continue
-
-Place in `.continue/mcpServers/mcp.json` in your workspace.
-
-**stdio (recommended):**
+**Continue** (`.continue/mcpServers/mcp.json`):
 ```json
 {
   "mcpServers": {
@@ -222,23 +156,7 @@ Place in `.continue/mcpServers/mcp.json` in your workspace.
 }
 ```
 
-**SSE:**
-```json
-{
-  "mcpServers": {
-    "vs-debugger": {
-      "type": "sse",
-      "url": "http://localhost:5050/sse"
-    }
-  }
-}
-```
-
-### Windsurf
-
-Add to `~/.codeium/windsurf/mcp_config.json` (global only).
-
-**stdio (recommended):**
+**Windsurf** (`~/.codeium/windsurf/mcp_config.json`):
 ```json
 {
   "mcpServers": {
@@ -249,67 +167,69 @@ Add to `~/.codeium/windsurf/mcp_config.json` (global only).
   }
 }
 ```
+</details>
 
-**SSE:**
-```json
-{
-  "mcpServers": {
-    "vs-debugger": {
-      "serverUrl": "http://localhost:5050/sse"
-    }
-  }
-}
+#### SSE (manual server)
+
+Start the server first, then point your agent at `http://localhost:5050/sse`:
+
+```bash
+VsDebuggerMcp.exe                # or: dotnet run
 ```
 
-### Any MCP Client
+| Agent | Config file | SSE URL field |
+|-------|------------|---------------|
+| **Cursor** | `.cursor/mcp.json` | `"url": "http://localhost:5050/sse"` |
+| **GitHub Copilot** | `.vscode/mcp.json` | `"type": "sse", "url": "http://localhost:5050/sse"` |
+| **Cline** | MCP Servers panel | `"type": "sse", "url": "http://localhost:5050/sse"` |
+| **Continue** | `.continue/mcpServers/mcp.json` | `"type": "sse", "url": "http://localhost:5050/sse"` |
+| **Windsurf** | `~/.codeium/windsurf/mcp_config.json` | `"serverUrl": "http://localhost:5050/sse"` |
 
-The server uses standard MCP protocol. For any unlisted client:
+> **Windsurf note:** Use `"serverUrl"` instead of `"url"`.
 
-- **stdio:** Run `VsDebuggerMcp.exe --stdio` as a child process
-- **SSE:** Start the server (`dotnet run` or `VsDebuggerMcp.exe`), connect to `http://localhost:5050/sse`
+#### Any other MCP client
 
-### Quick Reference
+- **stdio:** Launch `VsDebuggerMcp.exe --stdio` as a subprocess
+- **SSE:** Connect to `http://localhost:5050/sse`
 
-| Agent | Config File | Top-Level Key | stdio | SSE |
-|-------|------------|---------------|-------|-----|
-| Claude Code | Plugin auto-config | — | — | Auto |
-| Cursor | `.cursor/mcp.json` | `mcpServers` | Yes | Yes |
-| GitHub Copilot | `.vscode/mcp.json` | `servers` | Yes | Yes |
-| Cline | Cline MCP settings | `mcpServers` | Yes | Yes |
-| Continue | `.continue/mcpServers/*.json` | `mcpServers` | Yes | Yes |
-| Windsurf | `~/.codeium/windsurf/mcp_config.json` | `mcpServers` | Yes | Yes |
+Ready-to-copy config templates are in the [`editors/`](editors/) directory.
 
 ## Tool Reference
 
-### Build Tools
+<details>
+<summary><strong>Build Tools</strong> (6 tools)</summary>
 
 | Tool | Description |
 |------|-------------|
 | `BuildSolution` | Build the entire solution |
 | `RebuildSolution` | Rebuild the entire solution |
-| `BuildProject` | Build a specific project by name (supports fuzzy matching) |
+| `BuildProject` | Build a specific project (supports fuzzy name matching) |
 | `ListProjects` | List all projects with their unique names |
 | `GetBuildStatus` | Get current build state |
 | `CleanSolution` | Clean the solution |
+</details>
 
-### Debug Lifecycle Tools
+<details>
+<summary><strong>Debug Lifecycle Tools</strong> (10 tools)</summary>
 
 | Tool | Description |
 |------|-------------|
 | `DebugStart` | Start debugging (F5) |
-| `DebugStartWithBuild` | Build first, then start debugging the current startup project |
+| `DebugStartWithBuild` | Build then start debugging the startup project |
 | `DebugStartWithoutDebugging` | Start without debugging (Ctrl+F5) |
 | `DebugStop` | Stop debugging (Shift+F5) |
 | `DebugRestart` | Restart debugging |
 | `DebugGetMode` | Get current debug mode (Design/Break/Run) |
 | `DebugBreakAll` | Break all execution |
-| `DebugListProcesses` | List available processes (with optional name filter) |
+| `DebugListProcesses` | List available processes (optional name filter) |
 | `DebugAttachToProcess` | Attach to a process by PID |
 | `DebugAttachToProcessByName` | Attach to a process by name |
+</details>
 
-### Breakpoint Tools
+<details>
+<summary><strong>Breakpoint Tools</strong> (8 tools)</summary>
 
-Breakpoint file paths may be absolute paths or paths relative to the open solution.
+File paths may be absolute or relative to the open solution.
 
 | Tool | Description |
 |------|-------------|
@@ -321,10 +241,12 @@ Breakpoint file paths may be absolute paths or paths relative to the open soluti
 | `BreakpointToggle` | Toggle a breakpoint enabled/disabled |
 | `BreakpointList` | List all breakpoints |
 | `BreakpointRemoveAll` | Remove all breakpoints |
+</details>
 
-### Step Tools
+<details>
+<summary><strong>Step Tools</strong> (6 tools)</summary>
 
-Step and current-location responses include a small source preview when Visual Studio exposes file and line information.
+Responses include a source preview when Visual Studio exposes file and line info.
 
 | Tool | Description |
 |------|-------------|
@@ -334,8 +256,10 @@ Step and current-location responses include a small source preview when Visual S
 | `DebugContinue` | Continue execution (F5) |
 | `DebugRunToCursor` | Run to cursor position |
 | `DebugSetNextStatement` | Move execution pointer to a specific line |
+</details>
 
-### Inspect Tools
+<details>
+<summary><strong>Inspect Tools</strong> (9 tools)</summary>
 
 | Tool | Description |
 |------|-------------|
@@ -348,25 +272,31 @@ Step and current-location responses include a small source preview when Visual S
 | `DebugFreezeThread` | Freeze a thread |
 | `DebugThawThread` | Thaw (unfreeze) a thread |
 | `DebugSwitchThread` | Switch debugger to a specific thread |
+</details>
 
-### Exception Tools
+<details>
+<summary><strong>Exception Tools</strong> (3 tools)</summary>
 
 | Tool | Description |
 |------|-------------|
 | `ExceptionGetCurrent` | Get current exception details (type, message, stack trace) |
-| `ExceptionEnableBreak` | Enable first-chance exception breaking for a CLR exception type |
+| `ExceptionEnableBreak` | Enable first-chance breaking for a CLR exception type |
 | `ExceptionListSettings` | List exception groups |
+</details>
 
-### Output Tools
+<details>
+<summary><strong>Output Tools</strong> (4 tools)</summary>
 
 | Tool | Description |
 |------|-------------|
 | `OutputReadDebug` | Read the Debug output pane (last N lines) |
 | `OutputListPanes` | List all output window panes |
 | `OutputReadPane` | Read a specific output pane by name |
-| `OutputImmediateExecute` | Evaluate an expression in Immediate window context |
+| `OutputImmediateExecute` | Evaluate in Immediate window context |
+</details>
 
-### Watch Tools
+<details>
+<summary><strong>Watch Tools</strong> (4 tools)</summary>
 
 | Tool | Description |
 |------|-------------|
@@ -374,13 +304,15 @@ Step and current-location responses include a small source preview when Visual S
 | `WatchEvaluateMultiple` | Evaluate multiple expressions at once (semicolon-separated) |
 | `WatchAdd` | Add a watch expression to the Watch window |
 | `WatchClearAll` | Clear all watch expressions |
+</details>
 
 ## Building from Source
 
-To rebuild the `dist/` binaries after making code changes:
-
 ```bash
-dotnet publish -c Release -o dist/net8.0-windows --no-self-contained
+dotnet build                      # build
+dotnet run                        # run (SSE mode, port 5050)
+dotnet run -- --stdio             # run (stdio mode)
+dotnet publish -c Release -o dist/net8.0-windows --no-self-contained  # publish
 ```
 
 ## License
