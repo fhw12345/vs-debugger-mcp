@@ -6,10 +6,15 @@ namespace VsDebuggerMcp.Tests;
 
 public class StdioTransportTests
 {
-    private static string GetExePath()
+    private static string? TryGetExePath()
     {
-        // Walk up from test output dir to find the main project binary
         var dir = AppContext.BaseDirectory;
+
+        // Check directly in the test output directory (project reference copies the exe here)
+        var directPath = Path.Combine(dir, "VsDebuggerMcp.exe");
+        if (File.Exists(directPath)) return directPath;
+
+        // Walk up to find the repo root and check known build output paths
         for (int i = 0; i < 10; i++)
         {
             foreach (var subpath in new[]
@@ -25,7 +30,13 @@ public class StdioTransportTests
             }
             dir = Path.GetDirectoryName(dir) ?? dir;
         }
-        throw new FileNotFoundException("VsDebuggerMcp.exe not found. Run 'dotnet build -o bin/test-build' or 'dotnet build' first.");
+        return null;
+    }
+
+    private static string GetExePath()
+    {
+        return TryGetExePath()
+            ?? throw new FileNotFoundException("VsDebuggerMcp.exe not found. Run 'dotnet build -o bin/test-build' or 'dotnet build' first.");
     }
 
     private static async Task<string> RunStdio(string input, int timeoutSeconds = 15)
@@ -72,6 +83,9 @@ public class StdioTransportTests
     [Fact]
     public async Task Initialize_ReturnsValidJsonRpc()
     {
+        var exe = TryGetExePath();
+        if (exe == null) { Assert.Fail("VsDebuggerMcp.exe not found"); return; }
+
         var request = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1.0.0\"}}}";
         var stdout = await RunStdio(request);
 
