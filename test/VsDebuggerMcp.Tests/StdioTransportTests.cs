@@ -39,7 +39,7 @@ public class StdioTransportTests
             ?? throw new FileNotFoundException("VsDebuggerMcp.exe not found. Run 'dotnet build -o bin/test-build' or 'dotnet build' first.");
     }
 
-    private static async Task<string> RunStdio(string input, int timeoutSeconds = 15)
+    private static async Task<(string stdout, string stderr)> RunStdio(string input, int timeoutSeconds = 15)
     {
         var exe = GetExePath();
         var psi = new ProcessStartInfo
@@ -59,8 +59,9 @@ public class StdioTransportTests
 
         using var proc = Process.Start(psi)!;
 
-        // Read stdout in background to prevent deadlock
+        // Read stdout and stderr in background to prevent deadlock
         var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+        var stderrTask = proc.StandardError.ReadToEndAsync();
 
         // Write each line separately with a small delay so the server processes them
         foreach (var line in input.Split('\n', StringSplitOptions.RemoveEmptyEntries))
@@ -75,9 +76,10 @@ public class StdioTransportTests
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
         var stdout = await stdoutTask.WaitAsync(cts.Token);
+        var stderr = await stderrTask.WaitAsync(cts.Token);
         await proc.WaitForExitAsync(cts.Token);
 
-        return stdout;
+        return (stdout, stderr);
     }
 
     [Fact]
@@ -87,8 +89,9 @@ public class StdioTransportTests
         if (exe == null) { Assert.Fail("VsDebuggerMcp.exe not found"); return; }
 
         var request = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1.0.0\"}}}";
-        var stdout = await RunStdio(request);
+        var (stdout, stderr) = await RunStdio(request);
 
+        Assert.True(stdout.Length > 0, $"stdout was empty. stderr: {stderr[..Math.Min(500, stderr.Length)]}");
         Assert.Contains("\"jsonrpc\":\"2.0\"", stdout);
         Assert.Contains("\"id\":1", stdout);
         Assert.Contains("\"protocolVersion\"", stdout);
@@ -103,7 +106,7 @@ public class StdioTransportTests
             "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"notifications/initialized\"}",
             "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/list\",\"params\":{}}"
         );
-        var stdout = await RunStdio(requests, 15);
+        var (stdout, _) = await RunStdio(requests, 15);
 
         // Count tool names in the response
         var toolCount = 0;
@@ -125,7 +128,7 @@ public class StdioTransportTests
     public async Task Stdio_NoLogOutputOnStdout()
     {
         var request = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1.0.0\"}}}";
-        var stdout = await RunStdio(request);
+        var (stdout, _) = await RunStdio(request);
 
         // stdout should only contain JSON-RPC responses, no log prefixes
         Assert.DoesNotContain("[McpLogger]", stdout);
