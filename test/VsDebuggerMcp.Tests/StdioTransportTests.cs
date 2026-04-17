@@ -28,7 +28,7 @@ public class StdioTransportTests
         throw new FileNotFoundException("VsDebuggerMcp.exe not found. Run 'dotnet build -o bin/test-build' or 'dotnet build' first.");
     }
 
-    private static async Task<string> RunStdio(string input, int timeoutSeconds = 10)
+    private static async Task<string> RunStdio(string input, int timeoutSeconds = 15)
     {
         var exe = GetExePath();
         var psi = new ProcessStartInfo
@@ -43,8 +43,13 @@ public class StdioTransportTests
         };
         // Suppress .NET hosting info logs that leak to stdout
         psi.Environment["Logging__LogLevel__Default"] = "None";
+        // Prevent COM activation from launching VS during tests
+        psi.Environment["VS_DEBUGGER_MCP_DTE_PROCESS_ID"] = "99999";
 
         using var proc = Process.Start(psi)!;
+
+        // Read stdout in background to prevent deadlock
+        var stdoutTask = proc.StandardOutput.ReadToEndAsync();
 
         // Write each line separately with a small delay so the server processes them
         foreach (var line in input.Split('\n', StringSplitOptions.RemoveEmptyEntries))
@@ -54,11 +59,11 @@ public class StdioTransportTests
         }
 
         // Give the server time to process before closing stdin
-        await Task.Delay(2000);
+        await Task.Delay(3000);
         proc.StandardInput.Close();
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
-        var stdout = await proc.StandardOutput.ReadToEndAsync(cts.Token);
+        var stdout = await stdoutTask.WaitAsync(cts.Token);
         await proc.WaitForExitAsync(cts.Token);
 
         return stdout;
