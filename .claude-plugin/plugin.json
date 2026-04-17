@@ -1,6 +1,6 @@
 {
   "name": "vs-debugger-mcp",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "MCP server that exposes Visual Studio debugging capabilities. Control building, debugging, breakpoints, stepping, inspection, exceptions, output, and watch expressions through Claude Code.",
   "author": {
     "name": "Haowen Feng"
