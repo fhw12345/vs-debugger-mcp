@@ -48,6 +48,22 @@ if [ -z "$EXE" ] || [ ! -f "$EXE" ]; then
     exit 2
 fi
 
+# Convert MSYS/Git-Bash paths to Windows paths for .NET compatibility
+to_win_path() {
+    local p="$1"
+    # If it looks like an MSYS path (/c/... or /d/...), convert
+    if [[ "$p" =~ ^/[a-zA-Z]/ ]]; then
+        local drive="${p:1:1}"
+        p="${drive^^}:${p:2}"
+    fi
+    echo "$p"
+}
+
+# Escape a path for use in JSON strings (/ becomes \\)
+json_escape_path() {
+    echo "$1" | awk '{gsub(/\//, "\\\\"); print}'
+}
+
 echo "=== VsDebuggerMcp E2E Test ==="
 echo "Binary: $EXE"
 
@@ -58,7 +74,8 @@ export Logging__LogLevel__Default=None
 if [ -z "$SOLUTION" ]; then
     SOLUTION="$REPO_DIR/test/TestDebugApp/TestDebugApp.csproj"
 fi
-SOLUTION_ESC=$(echo "$SOLUTION" | sed 's/\\/\\\\/g')
+SOLUTION=$(to_win_path "$SOLUTION")
+SOLUTION_ESC=$(json_escape_path "$SOLUTION")
 echo "Solution: $SOLUTION"
 
 RESULTS_FILE=$(mktemp)
@@ -82,9 +99,11 @@ send_requests() {
     sleep 2
 
     # Add breakpoint (line 7 = first line of Main)
+    local bp_dir
+    bp_dir=$(echo "$SOLUTION" | sed 's|[/\\][^/\\]*$||')
     local bp_path
-    bp_path=$(echo "$SOLUTION" | sed 's|[/\\][^/\\]*$||')/Program.cs
-    bp_path=$(echo "$bp_path" | sed 's/\\/\\\\/g')
+    bp_path=$(to_win_path "$bp_dir/Program.cs")
+    bp_path=$(json_escape_path "$bp_path")
     echo "{\"jsonrpc\":\"2.0\",\"id\":50,\"method\":\"tools/call\",\"params\":{\"name\":\"breakpoint_add\",\"arguments\":{\"filePath\":\"$bp_path\",\"lineNumber\":7}}}"
     sleep 2
 
