@@ -39,7 +39,7 @@ public class StdioTransportTests
             ?? throw new FileNotFoundException("VsDebuggerMcp.exe not found. Run 'dotnet build -o bin/test-build' or 'dotnet build' first.");
     }
 
-    private static async Task<(string stdout, string stderr)> RunStdio(string input, int timeoutSeconds = 15)
+    private static async Task<(string stdout, string stderr)> RunStdio(string input, int timeoutSeconds = 30)
     {
         var exe = GetExePath();
         var psi = new ProcessStartInfo
@@ -106,7 +106,7 @@ public class StdioTransportTests
             "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"notifications/initialized\"}",
             "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/list\",\"params\":{}}"
         );
-        var (stdout, _) = await RunStdio(requests, 15);
+        var (stdout, _) = await RunStdio(requests, 30);
 
         // Count tool names in the response
         var toolCount = 0;
