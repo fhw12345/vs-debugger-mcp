@@ -58,6 +58,12 @@ claude plugin enable vs-debugger-mcp
 
 The server auto-starts on every session. All 52 MCP tools are available immediately.
 
+To update to the latest version:
+
+```bash
+claude plugins update vs-debugger-mcp@vs-debugger-marketplace
+```
+
 <details>
 <summary>Alternative: manual settings.json</summary>
 

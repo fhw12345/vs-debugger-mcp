@@ -75,11 +75,18 @@ public class StdioTransportTests
         proc.StandardInput.Close();
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
-        var stdout = await stdoutTask.WaitAsync(cts.Token);
-        var stderr = await stderrTask.WaitAsync(cts.Token);
-        await proc.WaitForExitAsync(cts.Token);
-
-        return (stdout, stderr);
+        try
+        {
+            var stdout = await stdoutTask.WaitAsync(cts.Token);
+            var stderr = await stderrTask.WaitAsync(cts.Token);
+            await proc.WaitForExitAsync(cts.Token);
+            return (stdout, stderr);
+        }
+        catch (OperationCanceledException)
+        {
+            try { proc.Kill(); } catch { }
+            return ("", "");
+        }
     }
 
     [Fact]
