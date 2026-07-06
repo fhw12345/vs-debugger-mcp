@@ -122,11 +122,9 @@ public class BreakpointTools
 
         foreach (Breakpoint2 bp in bps)
         {
-            // Message and BreakWhenHit setters may not be exposed in the interop type,
-            // use dynamic to access the COM setter directly.
-            dynamic dbp = bp;
-            DteConnector.ExecuteWithComRetry(() => { dbp.Message = message; });
-            DteConnector.ExecuteWithComRetry(() => { dbp.BreakWhenHit = false; });
+            // Set Message FIRST, then BreakWhenHit — VS rejects BreakWhenHit=false without a message.
+            DteConnector.ExecuteWithComRetry(() => { bp.Message = message; });
+            DteConnector.ExecuteWithComRetry(() => { bp.BreakWhenHit = false; });
         }
 
         return $"Tracepoint added at {resolvedPath}:{lineNumber} with message: \"{message}\"";
@@ -143,8 +141,6 @@ public class BreakpointTools
         if (!TryResolveSourceFile(dte, filePath, out var resolvedPath, out var errorMessage))
             return errorMessage;
 
-        var bps = DteConnector.ExecuteWithComRetry(() => dte.Debugger.Breakpoints.Add(File: resolvedPath, Line: lineNumber));
-
         var type = hitCountType.ToLowerInvariant() switch
         {
             "equal" => dbgHitCountType.dbgHitCountTypeEqual,
@@ -153,14 +149,11 @@ public class BreakpointTools
             _ => dbgHitCountType.dbgHitCountTypeEqual
         };
 
-        foreach (Breakpoint2 bp in bps)
-        {
-            // HitCountType and HitCountTarget setters are not exposed in the interop type,
-            // use dynamic to access the COM setter directly.
-            dynamic dbp = bp;
-            DteConnector.ExecuteWithComRetry(() => { dbp.HitCountType = type; });
-            DteConnector.ExecuteWithComRetry(() => { dbp.HitCountTarget = hitCount; });
-        }
+        DteConnector.ExecuteWithComRetry(() => dte.Debugger.Breakpoints.Add(
+            File: resolvedPath,
+            Line: lineNumber,
+            HitCount: hitCount,
+            HitCountType: type));
 
         return $"Hit count breakpoint added at {resolvedPath}:{lineNumber} (breaks when hit count {hitCountType} {hitCount})";
     }
